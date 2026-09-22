@@ -1,12 +1,13 @@
 // Electron shell for PDF Maker: serves the built web app from dist/ over a
 // private app:// scheme and adds desktop niceties (open-with, save dialogs).
-const { app, BrowserWindow, protocol, net, shell, Menu, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, protocol, net, session, shell, Menu, ipcMain, dialog } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 
 const DIST = path.join(__dirname, '..', 'dist');
 const ORIGIN = 'app://pdfmaker';
+const DEV_ICON = path.join(__dirname, '..', 'build', 'icon.png');
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
@@ -44,7 +45,8 @@ function createWindow() {
     minHeight: 520,
     title: 'PDF Maker',
     backgroundColor: '#f5f4f0',
-    icon: path.join(__dirname, '..', 'build', 'icon.png'),
+    // Packaged builds use the .exe's own icon; this covers `npm run app`.
+    icon: fs.existsSync(DEV_ICON) ? DEV_ICON : undefined,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -97,6 +99,17 @@ app.whenReady().then(() => {
     launchFile = null;
     return file ? readPdf(file) : null;
   });
+
+  // Privacy guarantee: the app window can never reach the network. Files are
+  // processed and saved locally only. (The updater runs in this main process,
+  // not in a window, and only downloads release info and installers.)
+  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    const fromWindow = details.webContentsId !== undefined;
+    const remote = /^(https?|wss?|ftp):/i.test(details.url);
+    callback({ cancel: fromWindow && remote });
+  });
+  // Only clipboard writes ("Copy text"); no camera, microphone, location, notifications, etc.
+  session.defaultSession.setPermissionRequestHandler((_wc, perm, callback) => callback(perm === 'clipboard-sanitized-write'));
 
   Menu.setApplicationMenu(null);
   createWindow();
