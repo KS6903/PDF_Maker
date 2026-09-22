@@ -8,7 +8,9 @@
     "prebuild": "node scripts/copy-pdfjs-assets.mjs",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "app": "npm run build && electron .",
+    "dist:win": "npm run build && electron-builder --win"
   },
   "repository": {
     "type": "git",
@@ -21,6 +23,8 @@
   "devDependencies": {
     "@cantoo/pdf-lib": "^2.11.1",
     "docx": "^9.7.1",
+    "electron": "^44.4.3",
+    "electron-builder": "^26.15.3",
     "jszip": "^3.10.2",
     "lucide": "^1.47.0",
     "mammoth": "^1.12.3",
@@ -29,5 +33,59 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.0"
   },
-  "productName": "PDF Maker"
+  "productName": "PDF Maker",
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "com.ks6903.pdfmaker",
+    "productName": "PDF Maker",
+    "copyright": "Copyright © 2026 KS6903",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "signAndEditExecutable": true
+    },
+    "portable": {
+      "artifactName": "PDF-Maker-${version}-portable.exe"
+    },
+    "nsis": {
+      "artifactName": "PDF-Maker-${version}-setup.exe",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "PDF Maker"
+    },
+    "fileAssociations": [
+      {
+        "ext": "pdf",
+        "name": "PDF Document",
+        "description": "PDF Document",
+        "role": "Editor"
+      }
+    ]
+  }
 }
