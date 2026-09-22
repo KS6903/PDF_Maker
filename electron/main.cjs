@@ -4,6 +4,7 @@ const { app, BrowserWindow, protocol, net, session, shell, Menu, ipcMain, dialog
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
+const { setupUpdater } = require('./updater.cjs');
 
 const DIST = path.join(__dirname, '..', 'dist');
 const ORIGIN = 'app://pdfmaker';
@@ -113,6 +114,7 @@ app.whenReady().then(() => {
 
   Menu.setApplicationMenu(null);
   createWindow();
+  setupUpdater(() => win);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

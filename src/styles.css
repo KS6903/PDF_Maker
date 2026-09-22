@@ -1343,3 +1343,28 @@ main.wide .tool-content {
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
 }
+
+.nav-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.update-line {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.link-btn:hover {
+  color: var(--accent-hover);
+}

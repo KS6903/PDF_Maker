@@ -54,6 +54,7 @@ const ctx: AppContext = {
 };
 
 const main = h('main', { id: 'main', tabindex: -1 });
+const updateLine = h('div', { class: 'update-line', hidden: true });
 const nav = h(
   'nav',
   { class: 'sidebar', 'aria-label': 'Tools' },
@@ -67,7 +68,7 @@ const nav = h(
       TOOLS.filter((t) => t.group === g).map((t) => h('a', { class: 'nav-item', href: `#/${t.id}`, 'data-id': t.id }, icon(t.icon, 17), h('span', null, t.title))),
     ),
   ),
-  h('div', { class: 'nav-foot' }, 'Everything runs on your device. Files are never uploaded.'),
+  h('div', { class: 'nav-foot' }, h('p', null, 'Everything runs on your device. Files are never uploaded.'), updateLine),
 );
 document.getElementById('app')!.append(nav, main);
 
@@ -134,7 +135,19 @@ interface DesktopFile {
   name: string;
   data: Uint8Array;
 }
-const desktop = (window as unknown as { pdfMaker?: { getLaunchFile(): Promise<DesktopFile | null>; onOpenFile(cb: (f: DesktopFile) => void): void } }).pdfMaker;
+interface UpdateStatus {
+  state: 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'ready' | 'error';
+  version?: string;
+  percent?: number;
+}
+interface DesktopBridge {
+  getLaunchFile(): Promise<DesktopFile | null>;
+  onOpenFile(cb: (f: DesktopFile) => void): void;
+  getAppInfo(): Promise<{ version: string; portable: boolean; packaged: boolean; status: UpdateStatus }>;
+  checkForUpdates(): Promise<UpdateStatus>;
+  onUpdateStatus(cb: (s: UpdateStatus) => void): void;
+}
+const desktop = (window as unknown as { pdfMaker?: DesktopBridge }).pdfMaker;
 async function openInEditor(f: DesktopFile | null) {
   if (!f) return;
   const src = await withBusy('Opening PDF…', () => openPdf({ name: f.name, bytes: new Uint8Array(f.data) }));
@@ -143,6 +156,25 @@ async function openInEditor(f: DesktopFile | null) {
 if (desktop) {
   void desktop.getLaunchFile().then(openInEditor);
   desktop.onOpenFile((f) => void openInEditor(f));
+  void desktop.getAppInfo().then((info) => {
+    const label = h('span');
+    const check = h('button', { type: 'button', class: 'link-btn', onclick: () => void desktop.checkForUpdates() }, 'Check for updates');
+    const show = (s: UpdateStatus) => {
+      const extra =
+        s.state === 'checking' ? ' · checking…'
+        : s.state === 'downloading' ? ` · downloading ${s.version ?? 'update'}${s.percent ? ` (${s.percent}%)` : ''}`
+        : s.state === 'ready' ? ` · ${s.version} ready, restart to install`
+        : s.state === 'available' ? ` · ${s.version} available`
+        : '';
+      label.textContent = `Version ${info.version}${extra}`;
+      check.hidden = s.state === 'checking' || s.state === 'downloading';
+      if (s.state === 'ready') check.textContent = 'Restart to update';
+    };
+    show(info.status);
+    desktop.onUpdateStatus(show);
+    updateLine.append(label, check);
+    updateLine.hidden = false;
+  });
 }
 
 window.addEventListener('hashchange', route);
