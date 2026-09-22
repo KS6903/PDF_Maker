@@ -1,7 +1,17 @@
 # PDF Maker
 
 An all-in-one PDF editor, maker and converter that runs entirely on your computer.
-Files are never uploaded anywhere.
+
+## Privacy
+
+Every file you open stays on your machine. All processing (editing, converting, merging,
+compressing, encrypting) happens locally, and results are saved only where you choose in the
+Save dialog. Nothing is ever uploaded. This is enforced, not just promised:
+
+- The desktop app blocks **every** network request from its window.
+- The page's Content-Security-Policy forbids network connections.
+- The only thing that goes online is the update check, which runs outside the app window and
+  only *downloads* version info and new installers from GitHub Releases. It never sends files.
 
 ## Tools
 
@@ -39,6 +49,30 @@ This produces, in `release/`:
 
 The executables are unsigned, so Windows SmartScreen may show "Windows protected your PC" the first
 time — click **More info → Run anyway**.
+
+## Sending updates
+
+Installed copies (`setup.exe`) check GitHub Releases on startup and every few hours. They
+download new versions in the background and offer **Restart now**; otherwise the update is
+installed the next time the app closes. The portable `.exe` can't replace itself, so it shows
+a notice and opens the download page. The sidebar shows the current version and has a
+**Check for updates** link.
+
+To release a new version:
+
+```bash
+npm version patch          # 1.0.0 → 1.0.1 (minor/major for bigger releases); commits + tags
+git push --follow-tags     # GitHub Actions builds the app and publishes the release
+```
+
+Or publish straight from this machine (uses your `gh` login):
+
+```bash
+npm version patch
+npm run release:win
+```
+
+Only copies that already include the updater (1.0.0 and later) update automatically.
 
 ## Development
 
