@@ -1,0 +1,33 @@
+{
+  "name": "pdf-maker",
+  "version": "1.0.0",
+  "description": "All-in-one offline PDF editor, maker and converter",
+  "scripts": {
+    "predev": "node scripts/copy-pdfjs-assets.mjs",
+    "dev": "vite",
+    "prebuild": "node scripts/copy-pdfjs-assets.mjs",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github-ks6903:KS6903/PDF_Maker.git"
+  },
+  "keywords": [],
+  "author": "KS6903",
+  "license": "MIT",
+  "type": "module",
+  "devDependencies": {
+    "@cantoo/pdf-lib": "^2.11.1",
+    "docx": "^9.7.1",
+    "jszip": "^3.10.2",
+    "lucide": "^1.47.0",
+    "mammoth": "^1.12.3",
+    "marked": "^18.0.14",
+    "pdfjs-dist": "^6.3.289",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0"
+  },
+  "productName": "PDF Maker"
+}
