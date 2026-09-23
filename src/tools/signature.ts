@@ -1,30 +1,35 @@
-import { h, button, textInput } from '../lib/ui';
+import { X } from 'lucide';
+import { h, button, textInput, checkbox, icon } from '../lib/ui';
+import { listSignatures, saveSignature, deleteSignature } from '../lib/signatures';
 
-const STORE_KEY = 'pdfmaker.signature';
+const SCALE = 3; // backing-store resolution so signatures print crisply
+const MAX_UPLOAD_SIDE = 2400;
 
 /**
- * Opens a dialog to draw, type or upload a signature.
- * Resolves with a trimmed transparent PNG data URL, or null if cancelled.
+ * Opens a dialog to pick a saved signature, or draw, type or upload a new one.
+ * Resolves with a transparent PNG data URL, or null if cancelled.
+ * Saved signatures live only in this computer's local storage.
  */
 export function signatureDialog(): Promise<string | null> {
   return new Promise((resolve) => {
     const W = 560;
     const H = 200;
-    const ratio = Math.min(window.devicePixelRatio || 1, 2);
-    const canvas = h('canvas', { class: 'sig-canvas', width: W * ratio, height: H * ratio, style: `width:${W}px;height:${H}px` }) as HTMLCanvasElement;
+    const canvas = h('canvas', { class: 'sig-canvas', width: W * SCALE, height: H * SCALE, style: `width:${W}px;height:${H}px` }) as HTMLCanvasElement;
     const ctx = canvas.getContext('2d')!;
-    ctx.scale(ratio, ratio);
+    ctx.scale(SCALE, SCALE);
     let ink = '#1a1a2e';
+    let pen = 2.6;
     let mode: 'draw' | 'type' = 'draw';
     let hasInk = false;
 
-    const typed = textInput('', 'Type your name');
+    const typed = textInput('', 'Type your name or initials');
     const fontSel = h(
       'select',
       { 'aria-label': 'Signature style', onchange: () => drawTyped() },
       [
         ['"Segoe Script", "Brush Script MT", "Lucida Handwriting", cursive', 'Script'],
         ['"Lucida Handwriting", "Segoe Print", cursive', 'Handwriting'],
+        ['"Segoe Print", "Comic Sans MS", cursive', 'Casual'],
         ['"Brush Script MT", "Segoe Script", cursive', 'Brush'],
         ['Georgia, "Times New Roman", serif', 'Formal'],
       ].map(([v, l]) => h('option', { value: v }, l)),
@@ -39,14 +44,14 @@ export function signatureDialog(): Promise<string | null> {
       clear();
       const text = typed.value.trim();
       if (!text) return;
-      let size = 72;
+      let size = 80;
       ctx.fillStyle = ink;
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'center';
       do {
         ctx.font = `${size}px ${fontSel.value}`;
         size -= 4;
-      } while (ctx.measureText(text).width > W - 40 && size > 16);
+      } while (ctx.measureText(text).width > W - 40 && size > 14);
       ctx.fillText(text, W / 2, H / 2);
       hasInk = true;
     }
@@ -64,7 +69,7 @@ export function signatureDialog(): Promise<string | null> {
       last = pos(e);
       mid = last;
       ctx.beginPath();
-      ctx.arc(last[0], last[1], 1.2, 0, Math.PI * 2);
+      ctx.arc(last[0], last[1], pen / 2, 0, Math.PI * 2);
       ctx.fillStyle = ink;
       ctx.fill();
       hasInk = true;
@@ -74,7 +79,8 @@ export function signatureDialog(): Promise<string | null> {
       const p = pos(e);
       const m: [number, number] = [(last[0] + p[0]) / 2, (last[1] + p[1]) / 2];
       ctx.strokeStyle = ink;
-      ctx.lineWidth = 2.6;
+      // Pressure-sensitive pens get natural line weight.
+      ctx.lineWidth = e.pressure > 0 && e.pointerType === 'pen' ? pen * (0.5 + e.pressure) : pen;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       ctx.beginPath();
@@ -88,32 +94,40 @@ export function signatureDialog(): Promise<string | null> {
     canvas.addEventListener('pointerup', stop);
     canvas.addEventListener('pointercancel', stop);
 
+    const remember = checkbox('Save to this computer for next time', true);
+
+    // Uploads are used at full resolution rather than squeezed onto the pad.
     const upload = h('input', {
       type: 'file',
       accept: 'image/*',
       hidden: true,
       onchange: () => {
         const f = upload.files?.[0];
+        upload.value = '';
         if (!f) return;
         const url = URL.createObjectURL(f);
         const img = new Image();
         img.onload = () => {
-          clear();
-          const k = Math.min((W - 20) / img.width, (H - 20) / img.height, 1);
-          ctx.drawImage(img, (W - img.width * k) / 2, (H - img.height * k) / 2, img.width * k, img.height * k);
-          hasInk = true;
+          const k = Math.min(1, MAX_UPLOAD_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+          const c = document.createElement('canvas');
+          c.width = Math.max(1, Math.round(img.naturalWidth * k));
+          c.height = Math.max(1, Math.round(img.naturalHeight * k));
+          c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
           URL.revokeObjectURL(url);
+          void finish(trimCanvas(c));
         };
         img.src = url;
       },
     }) as HTMLInputElement;
 
     const tabs = h('div', { class: 'seg', role: 'tablist' });
-    const typeRow = h('div', { class: 'row', hidden: true }, typed, fontSel);
+    const typeRow = h('div', { class: 'row sig-type-row', hidden: true }, typed, fontSel);
+    const penRow = h('div', { class: 'row' });
     const setMode = (m: 'draw' | 'type') => {
       mode = m;
       clear();
       typeRow.hidden = m !== 'type';
+      penRow.hidden = m !== 'draw';
       canvas.classList.toggle('typing', m === 'type');
       [...tabs.children].forEach((c, i) => c.setAttribute('aria-selected', String((i === 0) === (m === 'draw'))));
       if (m === 'type') {
@@ -126,31 +140,84 @@ export function signatureDialog(): Promise<string | null> {
       h('button', { type: 'button', role: 'tab', 'aria-selected': 'false', onclick: () => setMode('type') }, 'Type'),
     );
 
+    const custom = h('input', { type: 'color', value: '#1a1a2e', title: 'Any color', 'aria-label': 'Custom ink color' }) as HTMLInputElement;
+    const setInk = (c: string, el?: Element) => {
+      ink = c;
+      swatches.querySelectorAll('.swatch').forEach((s) => s.classList.remove('on'));
+      el?.classList.add('on');
+      if (mode === 'type') drawTyped();
+    };
     const swatches = h(
       'div',
       { class: 'swatches' },
-      ['#1a1a2e', '#1f3fae', '#0b6e4f'].map((c, i) =>
+      ['#1a1a2e', '#1f3fae', '#0b6e4f', '#b42318'].map((c, i) =>
         h('button', {
           type: 'button',
           class: `swatch${i === 0 ? ' on' : ''}`,
           style: `background:${c}`,
           'aria-label': `Ink color ${c}`,
-          onclick: (e: MouseEvent) => {
-            ink = c;
-            swatches.querySelectorAll('.swatch').forEach((s) => s.classList.remove('on'));
-            (e.currentTarget as HTMLElement).classList.add('on');
-            if (mode === 'type') drawTyped();
-          },
+          onclick: (e: MouseEvent) => setInk(c, e.currentTarget as Element),
         }),
+      ),
+      custom,
+    );
+    custom.addEventListener('input', () => setInk(custom.value));
+
+    penRow.append(
+      h('span', { class: 'muted small' }, 'Pen'),
+      ...(
+        [
+          ['Fine', 1.6],
+          ['Medium', 2.6],
+          ['Bold', 4],
+        ] as const
+      ).map(([label, w]) =>
+        h(
+          'button',
+          {
+            type: 'button',
+            class: `chip${w === pen ? ' on' : ''}`,
+            onclick: (e: MouseEvent) => {
+              pen = w;
+              penRow.querySelectorAll('.chip').forEach((c) => c.classList.remove('on'));
+              (e.currentTarget as Element).classList.add('on');
+            },
+          },
+          label,
+        ),
       ),
     );
 
-    let saved: string | null = null;
-    try {
-      saved = localStorage.getItem(STORE_KEY);
-    } catch {
-      /* storage unavailable */
+    const gallery = h('div', { class: 'sig-gallery' });
+    const galleryWrap = h('div', { class: 'stack', hidden: true }, h('strong', { class: 'small' }, 'Your saved signatures'), gallery);
+    async function renderGallery() {
+      const saved = await listSignatures();
+      galleryWrap.hidden = !saved.length;
+      gallery.replaceChildren(
+        ...saved.map((s) =>
+          h(
+            'div',
+            { class: 'sig-item' },
+            h('button', { type: 'button', class: 'sig-pick', title: 'Insert this signature', onclick: () => done(s.dataUrl) }, h('img', { src: s.dataUrl, alt: 'Saved signature' })),
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'mini sig-del',
+                title: 'Delete from this computer',
+                'aria-label': 'Delete saved signature',
+                onclick: async () => {
+                  await deleteSignature(s.id);
+                  void renderGallery();
+                },
+              },
+              icon(X, 13),
+            ),
+          ),
+        ),
+      );
     }
+    void renderGallery();
 
     const dlg = h('dialog', { class: 'modal sig-modal' }) as HTMLDialogElement;
     const done = (v: string | null) => {
@@ -158,15 +225,22 @@ export function signatureDialog(): Promise<string | null> {
       dlg.remove();
       resolve(v);
     };
+    async function finish(url: string) {
+      if (remember.input.checked) await saveSignature(url);
+      done(url);
+    }
     dlg.addEventListener('cancel', (e) => {
       e.preventDefault();
       done(null);
     });
     dlg.append(
-      h('h2', null, 'Add your signature'),
+      h('h2', null, 'Add a signature or initials'),
+      galleryWrap,
       h('div', { class: 'row between' }, tabs, swatches),
       typeRow,
+      penRow,
       h('div', { class: 'sig-pad' }, canvas, h('div', { class: 'sig-line' })),
+      h('div', { class: 'row between' }, remember.el, h('span', { class: 'muted small' }, 'Signatures never leave this computer.')),
       h(
         'div',
         { class: 'row between' },
@@ -175,21 +249,13 @@ export function signatureDialog(): Promise<string | null> {
           { class: 'row' },
           button('Clear', () => (mode === 'type' ? ((typed.value = ''), clear()) : clear()), { kind: 'ghost' }),
           button('Upload image', () => upload.click(), { kind: 'ghost' }),
-          saved ? button('Use saved signature', () => done(saved), { kind: 'ghost' }) : null,
         ),
         h(
           'div',
           { class: 'row' },
           button('Cancel', () => done(null)),
           button('Insert', () => {
-            if (!hasInk) return;
-            const url = trimCanvas(canvas);
-            try {
-              localStorage.setItem(STORE_KEY, url);
-            } catch {
-              /* storage unavailable or full */
-            }
-            done(url);
+            if (hasInk) void finish(trimCanvas(canvas));
           }, { kind: 'primary' }),
         ),
       ),
@@ -220,7 +286,7 @@ function trimCanvas(src: HTMLCanvasElement) {
     }
   }
   if (right < left) return src.toDataURL('image/png');
-  const pad = 6;
+  const pad = Math.round(Math.max(width, height) * 0.01);
   left = Math.max(0, left - pad);
   top = Math.max(0, top - pad);
   right = Math.min(width - 1, right + pad);
