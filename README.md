@@ -37,6 +37,13 @@ Every result has a **Continue with…** menu so you can chain tools (e.g. merge 
 The home screen lists recommended tools and recently opened files, and the top bar has a tool
 search (Ctrl+K) and an **Open file** button.
 
+## Document tabs
+
+The editor keeps several PDFs open at once, each in its own tab with its own edits, undo history,
+zoom and scroll position. Open more with the **+** button, by dropping files onto the page area,
+or from the home screen. A dot marks unsaved edits, **Save PDF** saves the tab you're on, and
+closing a tab with unsaved edits asks first. Ctrl+W closes a tab, Ctrl+Tab switches.
+
 ## Filling and signing
 
 - **Suggestion boxes.** Open a PDF in the editor and it marks the places meant to be filled in:
