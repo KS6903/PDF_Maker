@@ -3,6 +3,8 @@ import { PDFTextField, PDFCheckBox, PDFDropdown, PDFRadioGroup, PDFOptionList, t
 import { h, checkbox, field } from '../lib/ui';
 import { loadLib, pdfOutput, baseName } from '../lib/pdf';
 import { simpleTool, panel, type Tool } from './common';
+import { rememberEntry, suggestEntries } from '../lib/autofill';
+import { normalizeLabel } from '../lib/detect';
 
 type Getter = () => void; // applies the UI value to the pdf-lib field of a freshly loaded doc
 
@@ -62,8 +64,19 @@ export const formsTool: Tool = {
         const multi = f.isMultiline();
         const input = h(multi ? 'textarea' : 'input', { value: f.getText() ?? '', maxlength: f.getMaxLength() ?? undefined }) as HTMLInputElement;
         if (f.isReadOnly()) input.disabled = true;
-        values.set(name, () => input.value);
-        return field(label, input);
+        // Offer entries remembered on this computer (name, email, address…).
+        const key = normalizeLabel(label);
+        let list: HTMLDataListElement | null = null;
+        if (!multi) {
+          const id = `af-${Math.random().toString(36).slice(2)}`;
+          list = h('datalist', { id }, suggestEntries('', key, 12).map((e) => h('option', { value: e.value })));
+          input.setAttribute('list', id);
+        }
+        values.set(name, () => {
+          if (input.value.trim()) rememberEntry(input.value, key);
+          return input.value;
+        });
+        return h('div', null, field(label, input), list);
       }
       if (f instanceof PDFCheckBox) {
         const c = checkbox(label, f.isChecked());

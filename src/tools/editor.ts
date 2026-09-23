@@ -21,14 +21,18 @@ import {
   Trash2,
   Bold,
   Italic,
+  Sparkles,
+  Copy,
 } from 'lucide';
-import { degrees, rgb, BlendMode, LineCapStyle, type PDFPage } from '@cantoo/pdf-lib';
+import { degrees, rgb, BlendMode, LineCapStyle, PDFTextField, PDFCheckBox, type PDFPage } from '@cantoo/pdf-lib';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import type { TextItem } from 'pdfjs-dist/types/src/display/api';
 import { h, button, icon, withBusy, toast, select, numberInput } from '../lib/ui';
 import { loadLib, loadJs, renderPage, pdfOutput, baseName, hexToRgb01, visualFrame, pdfjs, type PdfSource } from '../lib/pdf';
 import { FontCache, FONT_OPTIONS, CSS_FONT, baselineEm, safeText, type FontFamily } from '../lib/fonts';
 import { signatureDialog } from './signature';
+import { fromWidgets, fromText, fromCanvas, mergeSuggestions, overlap, type Suggestion } from '../lib/detect';
+import { rememberEntry, suggestEntries, forgetEntry, forgetAll } from '../lib/autofill';
 import { pdfInput, resultsPanel, type Tool } from './common';
 
 /* ---------- annotation model (visual page coordinates, points, origin top-left) ---------- */
@@ -47,6 +51,10 @@ interface TextAnn extends Base {
   family: FontFamily;
   bold: boolean;
   italic: boolean;
+  /** Real form field this text fills (saved into the field, not drawn). */
+  field?: string;
+  /** Label next to it ("name"), used to remember entries for autofill. */
+  label?: string;
 }
 interface RectAnn extends Base {
   type: 'rect';
@@ -64,6 +72,8 @@ interface InkAnn extends Base {
   color: string;
   width: number;
   arrow?: boolean;
+  /** Checkbox form field this check mark ticks. */
+  field?: string;
 }
 interface ImageAnn extends Base {
   type: 'image';
@@ -123,6 +133,8 @@ interface PageView {
   renderedZoom: number;
   rendering: boolean;
   textItems?: { x: number; y: number; w: number; size: number; str: string; family: FontFamily }[];
+  suggestions?: Suggestion[];
+  detecting?: boolean;
 }
 
 export const editorTool: Tool = {
@@ -191,8 +203,22 @@ export const editorTool: Tool = {
     const sizeLabel = h('span', { class: 'muted small ed-size-label' }, 'Size');
     const textProps = h('span', { class: 'ed-textprops' }, familySel, boldBtn, italicBtn);
     const deleteBtn = button(null, () => deleteSelected(), { icon: Trash2, title: 'Delete selected (Del)', kind: 'ghost', disabled: true });
-    const props = h('div', { class: 'ed-props' }, colorInput, sizeLabel, sizeInput, textProps, deleteBtn);
+    const allPagesBtn = button('All pages', () => copyToAllPages(), { icon: Copy, kind: 'ghost', title: 'Add the selected item to every page (e.g. initials)' });
+    allPagesBtn.hidden = true;
+    const props = h('div', { class: 'ed-props' }, colorInput, sizeLabel, sizeInput, textProps, allPagesBtn, deleteBtn);
 
+    const suggestBtn = h('button', {
+      type: 'button',
+      class: 'tool-btn suggest-btn',
+      title: 'Show fill-in suggestions',
+      'aria-label': 'Show fill-in suggestions',
+      'aria-pressed': 'true',
+      onclick: () => {
+        showSuggestions = !showSuggestions;
+        suggestBtn.setAttribute('aria-pressed', String(showSuggestions));
+        pages.forEach(renderLayer);
+      },
+    });
     const undoBtn = button(null, () => undo(), { icon: Undo2, title: 'Undo (Ctrl+Z)', kind: 'ghost', disabled: true });
     const redoBtn = button(null, () => redo(), { icon: Redo2, title: 'Redo (Ctrl+Y)', kind: 'ghost', disabled: true });
     const zoomLabel = h('span', { class: 'zoom-label' }, '100%');
@@ -218,7 +244,8 @@ export const editorTool: Tool = {
       button(null, () => setZoom(zoom * 1.2), { icon: ZoomIn, title: 'Zoom in', kind: 'ghost' }),
       button('Fit', () => fitWidth(), { kind: 'ghost', title: 'Fit to width' }),
     );
-    const hint = h('div', { class: 'ed-hint' });
+    const hintText = h('span');
+    const hint = h('div', { class: 'ed-hint' }, hintText, h('span', { class: 'spacer' }), suggestBtn);
     const workspace = h('div', { class: 'ed-workspace', hidden: true }, bar, hint, h('div', { class: 'ed-stage' }, scroller, viewPill), h('div', { class: 'ed-results' }, results.el));
 
     const input = pdfInput(ctx, (s) => void open(s));
@@ -268,6 +295,82 @@ export const editorTool: Tool = {
       updatePageLabel();
     }
 
+    /* ---------- fill-in suggestions (like Acrobat's Fill & Sign) ---------- */
+    let showSuggestions = true;
+    async function detectFields(p: PageView) {
+      p.detecting = true;
+      try {
+        const items = await loadTextItems(p);
+        const vp = p.proxy.getViewport({ scale: 1 });
+        const annots = await p.proxy.getAnnotations().catch(() => []);
+        p.suggestions = mergeSuggestions([
+          ...fromWidgets(annots, (r) => [...vp.convertToViewportPoint(r[0], r[1]), ...vp.convertToViewportPoint(r[2], r[3])]),
+          ...fromText(items, p.width),
+          ...fromCanvas(p.canvas, p.width, items),
+        ]);
+      } catch (err) {
+        console.warn('Field detection failed', err);
+        p.suggestions = [];
+      } finally {
+        p.detecting = false;
+      }
+      renderLayer(p);
+      updateSuggestButton();
+    }
+
+    /** Suggestions not yet filled in (nothing typed or ticked on top of them). */
+    function openSuggestions(p: PageView) {
+      const mine = anns.filter((a) => a.page === p.index && (a.type === 'text' || a.type === 'ink'));
+      return (p.suggestions ?? []).filter((sg) => !mine.some((a) => overlap(sg, bbox(a)) > 0.2));
+    }
+
+    function fillSuggestion(p: PageView, sg: Suggestion) {
+      finishEditing();
+      const st = styleFor('text');
+      if (sg.kind === 'check') {
+        const sz = Math.max(6, Math.min(sg.w, sg.h));
+        const cx = sg.x + sg.w / 2;
+        const cy = sg.y + sg.h / 2;
+        anns.push({
+          id: nextId++,
+          page: p.index,
+          type: 'ink',
+          paths: [[[cx - sz * 0.35, cy], [cx - sz * 0.08, cy + sz * 0.28], [cx + sz * 0.38, cy - sz * 0.32]]],
+          color: '#111111',
+          width: Math.max(1, sz / 9),
+          field: sg.field,
+        });
+        commit();
+        renderLayer(p);
+        return;
+      }
+      const size = Math.round(Math.max(7, Math.min(sg.baseline !== undefined ? 12 : sg.h * 0.62, 14)) * 2) / 2;
+      const y = sg.baseline !== undefined ? sg.baseline - baselineEm(st.family) * size : sg.y + (sg.h - size * 1.2) / 2;
+      const a: TextAnn = {
+        id: nextId++,
+        page: p.index,
+        type: 'text',
+        x: sg.x + 2,
+        y,
+        text: '',
+        size,
+        color: st.color,
+        family: st.family,
+        bold: st.bold,
+        italic: st.italic,
+        field: sg.field,
+        label: sg.label,
+      };
+      anns.push(a);
+      startEditing(a);
+    }
+
+    function updateSuggestButton() {
+      const n = pages.reduce((sum, p) => sum + openSuggestions(p).length, 0);
+      suggestBtn.replaceChildren(icon(Sparkles, 16), h('span', null, n ? `${n} to fill` : 'Fields'));
+    }
+    updateSuggestButton();
+
     function layoutPage(p: PageView) {
       p.el.style.width = `${p.width * zoom}px`;
       p.el.style.height = `${p.height * zoom}px`;
@@ -289,6 +392,7 @@ export const editorTool: Tool = {
       } finally {
         p.rendering = false;
       }
+      if (!p.suggestions && !p.detecting) void detectFields(p);
       if (Math.abs(z - zoom) > 0.001 && isVisible(p)) void draw(p);
     }
 
@@ -322,8 +426,8 @@ export const editorTool: Tool = {
 
     /* ---------- tools & properties ---------- */
     const HINTS: Record<ToolId, string> = {
-      select: 'Click an item to select it. Drag to move, drag the corner handle to resize. Double-click text to edit.',
-      text: 'Click anywhere on a page to type.',
+      select: 'Click a blue box to fill it in. Click an item to select it; drag to move, drag the corner to resize. Double-click text to edit.',
+      text: 'Click anywhere on a page to type, or click a blue box to fill it in.',
       edittext: 'Click on existing text to replace it. The original is covered with white-out and you can retype it.',
       draw: 'Drag to draw freehand.',
       highlight: 'Drag over text to highlight it.',
@@ -340,7 +444,7 @@ export const editorTool: Tool = {
       tool = t;
       toolButtons.forEach((b, id) => b.classList.toggle('active', id === t));
       toolButtons.forEach((b, id) => b.setAttribute('aria-pressed', String(id === t)));
-      hint.textContent = HINTS[t];
+      hintText.textContent = HINTS[t];
       workspace.dataset.tool = t;
       if (t !== 'select') select_(null);
       syncProps();
@@ -373,6 +477,7 @@ export const editorTool: Tool = {
       boldBtn.setAttribute('aria-pressed', String(t?.bold ?? style.bold));
       italicBtn.setAttribute('aria-pressed', String(t?.italic ?? style.italic));
       deleteBtn.disabled = !ann;
+      allPagesBtn.hidden = !ann || pages.length < 2 || (ann.type === 'rect' && ann.mode === 'highlight');
     }
 
     function applyProp(fn: (s: Style, a?: Ann) => void) {
@@ -459,10 +564,27 @@ export const editorTool: Tool = {
 
     /* ---------- rendering annotations into the overlay ---------- */
     let editingEl: HTMLElement | null = null;
+    let autofillEl: HTMLElement | null = null;
 
     function renderLayer(p: PageView | undefined) {
       if (!p) return;
       p.layer.replaceChildren();
+      if (showSuggestions) {
+        for (const sg of openSuggestions(p)) {
+          const el = h('div', {
+            class: `suggest ${sg.kind}`,
+            title: sg.kind === 'check' ? 'Click to tick' : 'Click to fill in',
+            onpointerdown: (e: PointerEvent) => {
+              if (tool !== 'select' && tool !== 'text') return;
+              e.preventDefault();
+              e.stopPropagation();
+              fillSuggestion(p, sg);
+            },
+          });
+          Object.assign(el.style, { left: `${sg.x}px`, top: `${sg.y}px`, width: `${sg.w}px`, height: `${sg.h}px` });
+          p.layer.append(el);
+        }
+      }
       for (const a of anns.filter((x) => x.page === p.index)) {
         if (editingEl && a.id === editingId) {
           // Reuse the live contenteditable so typing isn't interrupted.
@@ -474,6 +596,8 @@ export const editorTool: Tool = {
       }
       const sel = anns.find((a) => a.id === selectedId && a.page === p.index);
       if (sel && sel.id !== editingId) p.layer.append(selectionBox(sel));
+      if (editingEl && autofillEl && p.layer.contains(editingEl)) p.layer.append(autofillEl);
+      updateSuggestButton();
     }
 
     function annElement(a: Ann): Element {
@@ -784,11 +908,82 @@ export const editorTool: Tool = {
       const el = h('div', { class: 'ann ann-text editing', 'data-id': String(a.id), contenteditable: 'plaintext-only', spellcheck: 'true' });
       el.textContent = a.text;
       editingEl = el;
+
+      // Autofill: offer things typed before (names, emails, addresses…), stored only on this computer.
+      const drop = h('div', { class: 'autofill', role: 'listbox', hidden: true });
+      autofillEl = drop;
+      let options: string[] = [];
+      let active = -1;
+      const pick = (value: string) => {
+        el.textContent = value;
+        finishEditing();
+      };
+      const refresh = () => {
+        options = suggestEntries(el.innerText, a.label).map((e) => e.value);
+        active = -1;
+        drop.hidden = !options.length;
+        if (!options.length) return;
+        drop.style.left = `${a.x}px`;
+        drop.style.top = `${a.y + Math.max(el.offsetHeight, a.size * 1.2) + 4}px`;
+        drop.style.transform = `scale(${1 / zoom})`;
+        drop.replaceChildren(
+          h('div', { class: 'autofill-head' }, 'Suggestions'),
+          ...options.map((v, i) =>
+            h(
+              'div',
+              { class: `autofill-item${i === active ? ' active' : ''}`, role: 'option', onpointerdown: (e: PointerEvent) => (e.preventDefault(), e.stopPropagation(), pick(v)) },
+              h('span', null, v),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'mini',
+                  title: 'Forget this entry',
+                  'aria-label': `Forget ${v}`,
+                  onpointerdown: (e: PointerEvent) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    forgetEntry(v);
+                    refresh();
+                  },
+                },
+                icon(X, 12),
+              ),
+            ),
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'autofill-forget',
+              onpointerdown: (e: PointerEvent) => {
+                e.preventDefault();
+                e.stopPropagation();
+                forgetAll();
+                refresh();
+              },
+            },
+            'Forget all remembered entries',
+          ),
+        );
+      };
+      const highlight = () => drop.querySelectorAll('.autofill-item').forEach((n, i) => n.classList.toggle('active', i === active));
+      el.addEventListener('input', refresh);
+      el.addEventListener('focus', refresh);
+
       renderLayer(pages[a.page]);
       el.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
+        if (!drop.hidden && options.length && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
           e.preventDefault();
-          finishEditing();
+          active = (active + (e.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+          highlight();
+        } else if (!drop.hidden && active >= 0 && (e.key === 'Enter' || e.key === 'Tab')) {
+          e.preventDefault();
+          pick(options[active]);
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          if (!drop.hidden) drop.hidden = true;
+          else finishEditing();
         }
         e.stopPropagation();
       });
@@ -812,11 +1007,15 @@ export const editorTool: Tool = {
       const text = editingEl.innerText.replace(/\n$/, '');
       editingId = null;
       editingEl = null;
+      autofillEl = null;
       if (!a) return;
       if (!text.trim()) {
         anns = anns.filter((x) => x.id !== a.id);
         if (selectedId === a.id) selectedId = null;
-      } else a.text = text;
+      } else {
+        a.text = text;
+        rememberEntry(text, a.label);
+      }
       commit();
       renderLayer(pages[a.page]);
       syncProps();
@@ -835,7 +1034,7 @@ export const editorTool: Tool = {
         const size = Math.hypot(tx[2], tx[3]);
         const fam = (content.styles[it.fontName]?.fontFamily ?? '').toLowerCase();
         const family: FontFamily = fam.includes('mono') ? 'courier' : fam.includes('serif') && !fam.includes('sans') ? 'times' : 'helvetica';
-        p.textItems.push({ x: tx[4], y: tx[5], w: it.width * (vp.rotation % 180 ? 1 : 1), size, str: it.str, family });
+        p.textItems.push({ x: tx[4], y: tx[5], w: it.width, size, str: it.str, family });
       }
       return p.textItems;
     }
@@ -910,6 +1109,30 @@ export const editorTool: Tool = {
       img.src = dataUrl;
     }
 
+    function copyToAllPages() {
+      const a = anns.find((x) => x.id === selectedId);
+      if (!a) return;
+      const src = pages[a.page];
+      let added = 0;
+      for (const p of pages) {
+        if (p.index === a.page) continue;
+        const c = cloneAnn(a);
+        c.id = nextId++;
+        c.page = p.index;
+        if (c.type === 'text' || c.type === 'ink') delete c.field;
+        // Same spot relative to the page, even when page sizes differ.
+        if (c.type !== 'ink') {
+          c.x = (c.x / src.width) * p.width;
+          c.y = (c.y / src.height) * p.height;
+        }
+        anns.push(c);
+        added++;
+      }
+      commit();
+      pages.forEach(renderLayer);
+      toast(`Added to ${added} more page${added === 1 ? '' : 's'}.`, 'success');
+    }
+
     async function addSignature() {
       const sig = await signatureDialog();
       if (sig) placeImage(sig, 180);
@@ -959,7 +1182,23 @@ export const editorTool: Tool = {
         const doc = await loadLib(s);
         const fonts = new FontCache(doc);
         const images = new Map<string, Awaited<ReturnType<typeof doc.embedPng>>>();
+        const form = doc.getForm();
         for (const a of anns) {
+          // Text typed into a real form field is saved as the field's value.
+          if (a.type === 'text' && a.field) {
+            const fld = form.getFieldMaybe(a.field);
+            if (fld instanceof PDFTextField) {
+              fld.setText(safeText(await fonts.get('helvetica'), a.text));
+              continue;
+            }
+          }
+          if (a.type === 'ink' && a.field) {
+            const fld = form.getFieldMaybe(a.field);
+            if (fld instanceof PDFCheckBox) {
+              fld.check();
+              continue;
+            }
+          }
           const page = doc.getPage(a.page);
           await drawAnn(page, a, fonts, async (dataUrl) => {
             let img = images.get(dataUrl);
