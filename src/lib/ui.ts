@@ -60,7 +60,8 @@ export function button(
       type: 'button',
       class: `btn ${opts.kind ?? 'default'}${label ? '' : ' icon-only'}`,
       title: opts.title ?? label ?? undefined,
-      'aria-label': opts.title ?? label ?? undefined,
+      // Visible text is the accessible name; only icon-only buttons need a label.
+      'aria-label': label ? undefined : (opts.title ?? undefined),
       disabled: opts.disabled,
       onclick: onClick,
     },
