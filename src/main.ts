@@ -1,8 +1,9 @@
 import './styles.css';
-import { FileText, Home, FilePen } from 'lucide';
-import { h, icon, dropzone, withBusy } from './lib/ui';
-import { openPdf, type PdfSource } from './lib/pdf';
+import { Home, LayoutGrid, Search, FolderOpen } from 'lucide';
+import { h, icon, button } from './lib/ui';
+import type { PdfSource } from './lib/pdf';
 import type { AppContext, Tool, ToolGroup } from './tools/common';
+import { renderHome, renderAllTools, toolIcon, openInEditor, TOOL_COLORS } from './home';
 import { editorTool } from './tools/editor';
 import { formsTool } from './tools/forms';
 import { watermarkTool } from './tools/watermark';
@@ -53,76 +54,138 @@ const ctx: AppContext = {
   },
 };
 
+/* ---------- top navbar ---------- */
+const openInput = h('input', {
+  type: 'file',
+  accept: 'application/pdf,.pdf',
+  hidden: true,
+  onchange: () => {
+    const f = openInput.files?.[0];
+    openInput.value = '';
+    if (f) void openInEditor(ctx, f);
+  },
+}) as HTMLInputElement;
+
+const searchInput = h('input', {
+  type: 'search',
+  class: 'search-input',
+  placeholder: 'Find a tool',
+  'aria-label': 'Find a tool',
+  autocomplete: 'off',
+}) as HTMLInputElement;
+const searchResults = h('div', { class: 'search-results', role: 'listbox', hidden: true });
+let searchIndex = 0;
+
+function matches(q: string) {
+  const s = q.trim().toLowerCase();
+  if (!s) return TOOLS;
+  return TOOLS.filter((t) => `${t.title} ${t.blurb} ${t.group}`.toLowerCase().includes(s));
+}
+function renderSearch() {
+  const list = matches(searchInput.value).slice(0, 8);
+  searchIndex = Math.min(searchIndex, Math.max(0, list.length - 1));
+  searchResults.replaceChildren(
+    ...(list.length
+      ? list.map((t, i) =>
+          h(
+            'a',
+            {
+              class: `search-item${i === searchIndex ? ' active' : ''}`,
+              href: `#/${t.id}`,
+              role: 'option',
+              'aria-selected': String(i === searchIndex),
+              onmousedown: (e: MouseEvent) => e.preventDefault(), // keep focus until the click navigates
+              onclick: () => closeSearch(),
+            },
+            toolIcon(t, 16),
+            h('span', null, h('strong', null, t.title), h('small', null, t.blurb)),
+          ),
+        )
+      : [h('div', { class: 'search-empty' }, 'No matching tools')]),
+  );
+  searchResults.hidden = false;
+}
+function closeSearch() {
+  searchResults.hidden = true;
+  searchInput.value = '';
+  searchInput.blur();
+}
+searchInput.addEventListener('focus', () => ((searchIndex = 0), renderSearch()));
+searchInput.addEventListener('input', () => ((searchIndex = 0), renderSearch()));
+searchInput.addEventListener('blur', () => setTimeout(() => (searchResults.hidden = true), 120));
+searchInput.addEventListener('keydown', (e) => {
+  const list = matches(searchInput.value).slice(0, 8);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    searchIndex = (searchIndex + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % Math.max(1, list.length);
+    renderSearch();
+  } else if (e.key === 'Enter' && list[searchIndex]) {
+    location.hash = `#/${list[searchIndex].id}`;
+    closeSearch();
+  } else if (e.key === 'Escape') {
+    closeSearch();
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    searchInput.focus();
+  }
+});
+
+const tabs = [
+  { hash: '', label: 'Home', icon: Home },
+  { hash: 'tools', label: 'All tools', icon: LayoutGrid },
+].map((t) => h('a', { class: 'nav-tab', href: `#/${t.hash}`, 'data-tab': t.hash }, icon(t.icon, 16), h('span', null, t.label)));
+
+const topbar = h(
+  'header',
+  { class: 'topbar' },
+  h('a', { class: 'brand', href: '#/' }, h('img', { class: 'brand-mark', src: './icon.svg', alt: '', width: 28, height: 28 }), h('span', null, 'PDF Maker')),
+  h('nav', { class: 'nav-tabs', 'aria-label': 'Main' }, tabs),
+  h('div', { class: 'search' }, icon(Search, 16), searchInput, h('kbd', null, 'Ctrl K'), searchResults),
+  h('span', { class: 'spacer' }),
+  button('Open file', () => openInput.click(), { icon: FolderOpen, kind: 'primary' }),
+  openInput,
+);
+
+/* ---------- sidebar (tool list) ---------- */
 const main = h('main', { id: 'main', tabindex: -1 });
 const updateLine = h('div', { class: 'update-line', hidden: true });
 const nav = h(
   'nav',
   { class: 'sidebar', 'aria-label': 'Tools' },
-  h('a', { class: 'brand', href: '#/' }, h('span', { class: 'brand-mark' }, icon(FileText, 18)), h('span', null, 'PDF Maker')),
-  h('a', { class: 'nav-item', href: '#/', 'data-id': '' }, icon(Home, 17), h('span', null, 'All tools')),
   GROUPS.map((g) =>
     h(
       'div',
       { class: 'nav-group' },
       h('div', { class: 'nav-heading' }, g),
-      TOOLS.filter((t) => t.group === g).map((t) => h('a', { class: 'nav-item', href: `#/${t.id}`, 'data-id': t.id }, icon(t.icon, 17), h('span', null, t.title))),
+      TOOLS.filter((t) => t.group === g).map((t) =>
+        h('a', { class: 'nav-item', href: `#/${t.id}`, 'data-id': t.id, style: `--c:${TOOL_COLORS[t.id]}` }, icon(t.icon, 17), h('span', null, t.title)),
+      ),
     ),
   ),
   h('div', { class: 'nav-foot' }, h('p', null, 'Everything runs on your device. Files are never uploaded.'), updateLine),
 );
-document.getElementById('app')!.append(nav, main);
-
-function home() {
-  const zone = dropzone({
-    accept: 'application/pdf,.pdf',
-    title: 'Open a PDF to edit',
-    hint: 'Drop a file here or click to browse. Everything stays on your computer.',
-    icon: FilePen,
-    onFiles: async ([file]) => {
-      const src = await withBusy('Opening PDF…', () => openPdf(file));
-      if (src) ctx.openTool('editor', src);
-    },
-  });
-  return h(
-    'div',
-    { class: 'home' },
-    h('header', { class: 'home-head' }, h('h1', null, 'What do you want to do with your PDF?'), h('p', { class: 'muted' }, 'Edit, sign, convert, merge, split, compress and protect — offline and free.')),
-    zone,
-    GROUPS.map((g) =>
-      h(
-        'section',
-        { class: 'tool-section' },
-        h('h2', null, g),
-        h(
-          'div',
-          { class: 'tool-grid' },
-          TOOLS.filter((t) => t.group === g).map((t) =>
-            h('a', { class: 'tool-card', href: `#/${t.id}` }, h('span', { class: 'tool-icon' }, icon(t.icon, 22)), h('strong', null, t.title), h('span', null, t.blurb)),
-          ),
-        ),
-      ),
-    ),
-  );
-}
+document.getElementById('app')!.append(topbar, nav, main);
 
 function route() {
   if (typeof cleanup === 'function') cleanup();
   cleanup = undefined;
   const id = location.hash.replace(/^#\/?/, '');
   const tool = TOOLS.find((t) => t.id === id);
-  nav.querySelectorAll('.nav-item').forEach((a) => a.classList.toggle('active', (a as HTMLElement).dataset.id === (tool?.id ?? '')));
+  nav.querySelectorAll('.nav-item').forEach((a) => a.classList.toggle('active', (a as HTMLElement).dataset.id === tool?.id));
+  tabs.forEach((a) => a.classList.toggle('active', !tool && a.dataset.tab === (id === 'tools' ? 'tools' : '')));
   main.replaceChildren();
   main.className = tool?.wide ? 'wide' : '';
-  document.title = tool ? `${tool.title} · PDF Maker` : 'PDF Maker';
+  document.title = tool ? `${tool.title} · PDF Maker` : id === 'tools' ? 'All tools · PDF Maker' : 'PDF Maker';
   if (!tool) {
     incoming = undefined;
-    main.append(home());
+    main.append(id === 'tools' ? renderAllTools(TOOLS, GROUPS) : renderHome(ctx, TOOLS));
   } else {
     const body = h('div', { class: 'tool-content' });
     if (!tool.wide) {
-      main.append(
-        h('header', { class: 'tool-head' }, h('span', { class: 'tool-icon' }, icon(tool.icon, 22)), h('div', null, h('h1', null, tool.title), h('p', { class: 'muted' }, tool.blurb))),
-      );
+      main.append(h('header', { class: 'tool-head' }, toolIcon(tool), h('div', null, h('h1', null, tool.title), h('p', { class: 'muted' }, tool.blurb))));
     }
     main.append(body);
     cleanup = tool.mount(body, ctx);
@@ -148,14 +211,12 @@ interface DesktopBridge {
   onUpdateStatus(cb: (s: UpdateStatus) => void): void;
 }
 const desktop = (window as unknown as { pdfMaker?: DesktopBridge }).pdfMaker;
-async function openInEditor(f: DesktopFile | null) {
-  if (!f) return;
-  const src = await withBusy('Opening PDF…', () => openPdf({ name: f.name, bytes: new Uint8Array(f.data) }));
-  if (src) ctx.openTool('editor', src);
+function openLaunchFile(f: DesktopFile | null) {
+  if (f) void openInEditor(ctx, { name: f.name, bytes: new Uint8Array(f.data) });
 }
 if (desktop) {
-  void desktop.getLaunchFile().then(openInEditor);
-  desktop.onOpenFile((f) => void openInEditor(f));
+  void desktop.getLaunchFile().then(openLaunchFile);
+  desktop.onOpenFile(openLaunchFile);
   void desktop.getAppInfo().then((info) => {
     const label = h('span');
     const check = h('button', { type: 'button', class: 'link-btn', onclick: () => void desktop.checkForUpdates() }, 'Check for updates');
@@ -178,7 +239,12 @@ if (desktop) {
 }
 
 window.addEventListener('hashchange', route);
-// Don't let a stray file drop outside a drop zone navigate away from the app.
+// A PDF dropped anywhere outside a tool's drop zone opens in the editor.
 window.addEventListener('dragover', (e) => e.preventDefault());
-window.addEventListener('drop', (e) => e.preventDefault());
+window.addEventListener('drop', (e) => {
+  if (e.defaultPrevented) return; // a drop zone already handled it
+  e.preventDefault();
+  const file = [...(e.dataTransfer?.files ?? [])].find((f) => /\.pdf$/i.test(f.name) || f.type === 'application/pdf');
+  if (file && !TOOLS.find((t) => t.wide && location.hash === `#/${t.id}`)) void openInEditor(ctx, file);
+});
 route();

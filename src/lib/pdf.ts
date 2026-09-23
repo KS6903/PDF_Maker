@@ -4,6 +4,7 @@ import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import JSZip from 'jszip';
 import { askPassword } from './ui';
+import { addRecent } from './recent';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -53,6 +54,8 @@ export async function openPdf(file: File | { name: string; bytes: Uint8Array }):
       const doc = await pdfjs.getDocument(docParams(bytes.slice(), password)).promise;
       const src: PdfSource = { name: file.name, bytes, password, pageCount: doc.numPages };
       await doc.loadingTask.destroy();
+      // Files the user picked themselves show up under "Recent" on the home screen.
+      if (file instanceof File) void addRecent(file.name, bytes, doc.numPages);
       return src;
     } catch (err) {
       if ((err as { name?: string }).name !== 'PasswordException') throw err;
