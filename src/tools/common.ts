@@ -127,8 +127,11 @@ export function pdfInput(ctx: AppContext, onLoad: (src: PdfSource | null) => voi
   set(null);
   const incoming = ctx.takeIncoming();
   if (incoming) {
-    if (incoming.pageCount) set(incoming);
-    else void load(incoming);
+    // After the tool has finished mounting, so its own setup runs first.
+    queueMicrotask(() => {
+      if (incoming.pageCount) set(incoming);
+      else void load(incoming);
+    });
   }
   return { el, get: () => current, set };
 }

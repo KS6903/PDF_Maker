@@ -1843,3 +1843,89 @@ main.wide .tool-content {
 .ed-hint .suggest-btn {
   height: 28px;
 }
+
+/* ---------- editor document tabs ---------- */
+.ed-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 6px 8px 0;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ed-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 230px;
+  padding: 7px 6px 7px 12px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.ed-tab:hover {
+  background: color-mix(in srgb, var(--sunken) 60%, transparent);
+  color: var(--text);
+}
+.ed-tab.active {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+  font-weight: 600;
+  margin-bottom: -1px;
+  padding-bottom: 8px;
+}
+.ed-tab svg {
+  color: var(--accent);
+  flex: none;
+}
+.ed-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ed-tab-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+}
+.ed-tab-close {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.55;
+  flex: none;
+}
+.ed-tab-close:hover {
+  background: var(--sunken);
+  opacity: 1;
+}
+.ed-tab-add {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  margin: 0 0 4px 4px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  flex: none;
+}
+.ed-tab-add:hover {
+  background: var(--sunken);
+  color: var(--text);
+}

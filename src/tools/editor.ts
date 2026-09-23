@@ -23,12 +23,14 @@ import {
   Italic,
   Sparkles,
   Copy,
+  Plus,
+  FileText,
 } from 'lucide';
 import { degrees, rgb, BlendMode, LineCapStyle, PDFTextField, PDFCheckBox, type PDFPage } from '@cantoo/pdf-lib';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import type { TextItem } from 'pdfjs-dist/types/src/display/api';
 import { h, button, icon, withBusy, toast, select, numberInput } from '../lib/ui';
-import { loadLib, loadJs, renderPage, pdfOutput, baseName, hexToRgb01, visualFrame, pdfjs, type PdfSource } from '../lib/pdf';
+import { loadLib, loadJs, openPdf, renderPage, pdfOutput, baseName, hexToRgb01, visualFrame, pdfjs, type PdfSource } from '../lib/pdf';
 import { FontCache, FONT_OPTIONS, CSS_FONT, baselineEm, safeText, type FontFamily } from '../lib/fonts';
 import { signatureDialog } from './signature';
 import { fromWidgets, fromText, fromCanvas, mergeSuggestions, overlap, type Suggestion } from '../lib/detect';
@@ -147,7 +149,6 @@ export const editorTool: Tool = {
   acceptsPdf: true,
   mount(root, ctx) {
     let src: PdfSource | null = null;
-    let js: PDFDocumentProxy | null = null;
     let pages: PageView[] = [];
     let anns: Ann[] = [];
     let nextId = 1;
@@ -156,15 +157,15 @@ export const editorTool: Tool = {
     let editingId: number | null = null;
     let zoom = 1;
     let dirty = false;
-    const undoStack: Ann[][] = [];
-    const redoStack: Ann[][] = [];
+    let undoStack: Ann[][] = [];
+    let redoStack: Ann[][] = [];
     const styles: Record<string, Style> = {};
     const styleFor = (t: string): Style => (styles[t] ??= { color: '#111111', size: 14, family: 'helvetica', bold: false, italic: false, ...DEFAULT_STYLE[t] });
 
     const results = resultsPanel(ctx);
     const scroller = h('div', { class: 'ed-scroll' });
-    const pagesEl = h('div', { class: 'ed-pages' });
-    scroller.append(pagesEl);
+    let pagesEl: HTMLElement = h('div', { class: 'ed-pages' });
+    let observer: IntersectionObserver | null = null;
 
     /* ---------- toolbar ---------- */
     const toolButtons = new Map<ToolId, HTMLButtonElement>();
@@ -244,55 +245,231 @@ export const editorTool: Tool = {
       button(null, () => setZoom(zoom * 1.2), { icon: ZoomIn, title: 'Zoom in', kind: 'ghost' }),
       button('Fit', () => fitWidth(), { kind: 'ghost', title: 'Fit to width' }),
     );
+    const tabsEl = h('div', { class: 'ed-tabs', role: 'tablist', 'aria-label': 'Open documents' });
+    const tabInput = h('input', {
+      type: 'file',
+      accept: 'application/pdf,.pdf',
+      multiple: true,
+      hidden: true,
+      onchange: async () => {
+        const files = [...(tabInput.files ?? [])];
+        tabInput.value = '';
+        for (const file of files) {
+          const opened = await withBusy('Opening PDF…', () => openPdf(file));
+          if (opened) await openDoc(opened);
+        }
+      },
+    }) as HTMLInputElement;
+
     const hintText = h('span');
     const hint = h('div', { class: 'ed-hint' }, hintText, h('span', { class: 'spacer' }), suggestBtn);
-    const workspace = h('div', { class: 'ed-workspace', hidden: true }, bar, hint, h('div', { class: 'ed-stage' }, scroller, viewPill), h('div', { class: 'ed-results' }, results.el));
+    const workspace = h('div', { class: 'ed-workspace', hidden: true }, tabsEl, bar, hint, h('div', { class: 'ed-stage' }, scroller, viewPill), h('div', { class: 'ed-results' }, results.el));
 
-    const input = pdfInput(ctx, (s) => void open(s));
+    const input = pdfInput(ctx, (s) => void openDoc(s));
     const intro = h('div', { class: 'ed-intro' }, input.el);
+    scroller.addEventListener('dragover', (e) => e.preventDefault());
+    scroller.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      for (const file of [...(e.dataTransfer?.files ?? [])].filter((x) => /\.pdf$/i.test(x.name) || x.type === 'application/pdf')) {
+        const opened = await withBusy('Opening PDF…', () => openPdf(file));
+        if (opened) await openDoc(opened);
+      }
+    });
     root.append(intro, workspace);
 
-    /* ---------- open & render ---------- */
-    let observer: IntersectionObserver | null = null;
+    /* ---------- open documents (tabs) ---------- */
 
-    async function open(s: PdfSource | null) {
-      if (dirty && s !== src && !confirm('Discard your unsaved edits?')) return;
-      await js?.loadingTask.destroy();
-      observer?.disconnect();
-      src = s;
-      js = null;
-      pages = [];
-      anns = [];
-      undoStack.length = redoStack.length = 0;
-      selectedId = editingId = null;
-      dirty = false;
-      pagesEl.replaceChildren();
+    /** One open document: its pages, edits, history and view state. */
+    interface DocState {
+      src: PdfSource;
+      js: PDFDocumentProxy;
+      pages: PageView[];
+      anns: Ann[];
+      nextId: number;
+      selectedId: number | null;
+      zoom: number;
+      dirty: boolean;
+      undoStack: Ann[][];
+      redoStack: Ann[][];
+      lastSnap: string;
+      pagesEl: HTMLElement;
+      observer: IntersectionObserver | null;
+      scrollTop: number;
+    }
+    const docs: DocState[] = [];
+    let activeDoc = -1;
+
+    function renderTabs() {
+      tabsEl.replaceChildren(
+        ...docs.map((d, i) =>
+          h(
+            'div',
+            {
+              class: `ed-tab${i === activeDoc ? ' active' : ''}`,
+              role: 'tab',
+              tabindex: 0,
+              'aria-selected': String(i === activeDoc),
+              title: d.src.name,
+              onclick: () => switchDoc(i),
+              onkeydown: (e: KeyboardEvent) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  switchDoc(i);
+                }
+              },
+              onauxclick: (e: MouseEvent) => e.button === 1 && void closeDoc(i),
+            },
+            icon(FileText, 14),
+            h('span', { class: 'ed-tab-name' }, d.src.name),
+            d.dirty ? h('span', { class: 'ed-tab-dot', title: 'Unsaved edits' }) : null,
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'ed-tab-close',
+                title: 'Close',
+                'aria-label': `Close ${d.src.name}`,
+                onclick: (e: MouseEvent) => {
+                  e.stopPropagation();
+                  void closeDoc(i);
+                },
+              },
+              icon(X, 13),
+            ),
+          ),
+        ),
+        h('button', { type: 'button', class: 'ed-tab-add', title: 'Open another PDF', 'aria-label': 'Open another PDF', onclick: () => tabInput.click() }, icon(Plus, 16)),
+        tabInput,
+      );
+      tabsEl.hidden = !docs.length;
+    }
+
+    /** Copy the live editing state back into the active document. */
+    function captureActive() {
+      const d = docs[activeDoc];
+      if (!d) return;
+      finishEditing();
+      Object.assign(d, { pages, anns, nextId, selectedId, zoom, dirty, undoStack, redoStack, lastSnap, pagesEl, observer, scrollTop: scroller.scrollTop });
+    }
+
+    function activate(i: number) {
+      const d = docs[i];
+      if (!d) return;
+      activeDoc = i;
+      src = d.src;
+      pages = d.pages;
+      anns = d.anns;
+      nextId = d.nextId;
+      selectedId = d.selectedId;
+      zoom = d.zoom;
+      dirty = d.dirty;
+      undoStack = d.undoStack;
+      redoStack = d.redoStack;
+      lastSnap = d.lastSnap;
+      observer = d.observer;
+      pagesEl = d.pagesEl;
+      docs.forEach((o) => (o.pagesEl.hidden = o !== d));
+      editingId = null;
+      editingEl = null;
+      autofillEl = null;
+      scroller.scrollTop = d.scrollTop;
+      zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
+      pages.forEach(layoutPage);
+      pages.filter(isVisible).forEach((p) => void draw(p));
+      pages.forEach(renderLayer);
+      renderTabs();
+      updateHistoryButtons();
+      updateSuggestButton();
+      updatePageLabel();
+      syncProps();
       results.hide();
-      workspace.hidden = !s;
-      intro.hidden = !!s;
+    }
+
+    function switchDoc(i: number) {
+      if (i === activeDoc || !docs[i]) return;
+      captureActive();
+      activate(i);
+    }
+
+    async function openDoc(s: PdfSource | null) {
       if (!s) return;
-      await withBusy('Loading pages…', async () => {
-        js = await loadJs(s);
-        observer = new IntersectionObserver((entries) => entries.forEach((e) => e.isIntersecting && void draw(pages[+(e.target as HTMLElement).dataset.index!])), {
-          root: scroller,
-          rootMargin: '800px 0px',
-        });
-        for (let i = 0; i < js.numPages; i++) {
-          const proxy = await js.getPage(i + 1);
+      captureActive();
+      const d: DocState = {
+        src: s,
+        js: null as unknown as PDFDocumentProxy,
+        pages: [],
+        anns: [],
+        nextId: 1,
+        selectedId: null,
+        zoom: 1,
+        dirty: false,
+        undoStack: [],
+        redoStack: [],
+        lastSnap: JSON.stringify([]),
+        pagesEl: h('div', { class: 'ed-pages' }),
+        observer: null,
+        scrollTop: 0,
+      };
+      scroller.append(d.pagesEl);
+      docs.push(d);
+      const ok = await withBusy('Loading pages…', async () => {
+        d.js = await loadJs(s);
+        d.observer = new IntersectionObserver(
+          (entries) => entries.forEach((e) => e.isIntersecting && void draw(d.pages[+(e.target as HTMLElement).dataset.index!])),
+          { root: scroller, rootMargin: '800px 0px' },
+        );
+        for (let i = 0; i < d.js.numPages; i++) {
+          const proxy = await d.js.getPage(i + 1);
           const vp = proxy.getViewport({ scale: 1 });
           const canvas = h('canvas');
           const layer = h('div', { class: 'ed-layer' });
-          const el = h('div', { class: 'ed-page', 'data-index': String(i) }, canvas, layer, h('span', { class: 'ed-pagenum' }, `${i + 1} / ${js.numPages}`));
+          const el = h('div', { class: 'ed-page', 'data-index': String(i) }, canvas, layer, h('span', { class: 'ed-pagenum' }, `${i + 1} / ${d.js.numPages}`));
           const pv: PageView = { index: i, proxy, width: vp.width, height: vp.height, el, canvas, layer, renderedZoom: 0, rendering: false };
-          bindLayer(pv);
-          pages.push(pv);
-          pagesEl.append(el);
-          observer.observe(el);
+          d.pages.push(pv);
+          d.pagesEl.append(el);
+          d.observer.observe(el);
         }
+        return true;
       });
+      if (!ok) {
+        // Loading failed: drop the half-open tab.
+        d.pagesEl.remove();
+        docs.splice(docs.indexOf(d), 1);
+        renderTabs();
+        return;
+      }
+      workspace.hidden = false;
+      intro.hidden = true;
+      activate(docs.indexOf(d));
+      d.pages.forEach(bindLayer);
       fitWidth();
       setTool('select');
       updatePageLabel();
+    }
+
+    async function closeDoc(i: number) {
+      const d = docs[i];
+      if (!d) return;
+      if (i === activeDoc) captureActive();
+      if (d.dirty && !confirm(`"${d.src.name}" has unsaved edits. Close it anyway?`)) return;
+      await d.js?.loadingTask.destroy();
+      d.observer?.disconnect();
+      d.pagesEl.remove();
+      docs.splice(i, 1);
+      if (!docs.length) {
+        activeDoc = -1;
+        src = null;
+
+        pages = [];
+        anns = [];
+        dirty = false;
+        workspace.hidden = true;
+        intro.hidden = false;
+        input.set(null);
+        renderTabs();
+        return;
+      }
+      activate(Math.min(i, docs.length - 1));
     }
 
     /* ---------- fill-in suggestions (like Acrobat's Fill & Sign) ---------- */
@@ -532,8 +709,13 @@ export const editorTool: Tool = {
       if (undoStack.length > 200) undoStack.shift();
       redoStack.length = 0;
       lastSnap = json;
+      const was = dirty;
       dirty = true;
       updateHistoryButtons();
+      if (!was) {
+        if (docs[activeDoc]) docs[activeDoc].dirty = true;
+        renderTabs();
+      }
     }
     function undo() {
       finishEditing();
@@ -1151,6 +1333,14 @@ export const editorTool: Tool = {
       } else if (mod && e.key.toLowerCase() === 'y') {
         e.preventDefault();
         redo();
+      } else if (mod && e.key.toLowerCase() === 'w') {
+        e.preventDefault();
+        void closeDoc(activeDoc);
+      } else if (mod && (e.key === 'Tab' || e.key === 'PageDown' || e.key === 'PageUp')) {
+        if (docs.length < 2) return;
+        e.preventDefault();
+        const back = e.shiftKey || e.key === 'PageUp';
+        switchDoc((activeDoc + (back ? -1 : 1) + docs.length) % docs.length);
       } else if (mod && e.key.toLowerCase() === 's') {
         e.preventDefault();
         void save();
@@ -1169,7 +1359,7 @@ export const editorTool: Tool = {
     const onResize = () => pages.length && pages.filter(isVisible).forEach((p) => void draw(p));
     window.addEventListener('resize', onResize);
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (dirty) e.preventDefault();
+      if (dirty || docs.some((d) => d.dirty)) e.preventDefault();
     };
     window.addEventListener('beforeunload', onBeforeUnload);
 
@@ -1214,6 +1404,8 @@ export const editorTool: Tool = {
       });
       if (!out) return;
       dirty = false;
+      if (docs[activeDoc]) docs[activeDoc].dirty = false;
+      renderTabs();
       results.show([pdfOutput(`${baseName(s.name)}-edited`, out)]);
     }
 
@@ -1221,8 +1413,10 @@ export const editorTool: Tool = {
       document.removeEventListener('keydown', onKey);
       window.removeEventListener('resize', onResize);
       window.removeEventListener('beforeunload', onBeforeUnload);
-      observer?.disconnect();
-      void js?.loadingTask.destroy();
+      for (const d of docs) {
+        d.observer?.disconnect();
+        void d.js?.loadingTask.destroy();
+      }
     };
   },
 };
