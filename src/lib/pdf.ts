@@ -140,7 +140,7 @@ export function parseRanges(input: string, pageCount: number): number[] {
     const a = num(m[1], 1);
     const b = m[2] === undefined ? a : num(m[2], pageCount);
     if (a < 1 || b < 1 || a > pageCount || b > pageCount) {
-      throw new Error(`Page range “${part.trim()}” is outside 1–${pageCount}.`);
+      throw new Error(`Page range “${part.trim()}” is outside 1-${pageCount}.`);
     }
     const step = a <= b ? 1 : -1;
     for (let i = a; step > 0 ? i <= b : i >= b; i += step) out.push(i - 1);

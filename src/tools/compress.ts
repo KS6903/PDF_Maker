@@ -25,9 +25,9 @@ export const compressTool: Tool = {
     const explain = h('p', { class: 'muted' });
     const mode = select<Mode>(
       [
-        ['balanced', 'Balanced — good quality, much smaller'],
-        ['strong', 'Strong — smallest file, lower quality'],
-        ['lossless', 'Lossless — keep text selectable, modest savings'],
+        ['balanced', 'Balanced (good quality, much smaller)'],
+        ['strong', 'Strong (smallest file, lower quality)'],
+        ['lossless', 'Lossless (keep text selectable, modest savings)'],
         ['custom', 'Custom resolution & quality'],
       ],
       'balanced',
@@ -76,7 +76,7 @@ export const compressTool: Tool = {
         const note =
           after < before
             ? `${formatBytes(before)} → ${formatBytes(after)} (${pct}% smaller)`
-            : `${formatBytes(before)} → ${formatBytes(after)}. This file was already well optimized — try a stronger setting.`;
+            : `${formatBytes(before)} → ${formatBytes(after)}. This file was already well optimized. Try a stronger setting.`;
         return { files: [pdfOutput(`${baseName(src.name)}-compressed`, out)], note };
       },
     });

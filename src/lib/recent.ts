@@ -6,6 +6,8 @@
  * never loads the documents themselves into memory.
  */
 
+import { STORES, run } from './db';
+
 export interface RecentFile {
   id: string;
   name: string;
@@ -14,41 +16,10 @@ export interface RecentFile {
   openedAt: number;
 }
 
-const DB = 'pdfmaker';
-const META = 'recentMeta';
-const DATA = 'recentData';
+const META = STORES.recentMeta;
+const DATA = STORES.recentData;
 const MAX_FILES = 8;
 const MAX_BYTES = 25 * 1024 * 1024; // don't keep copies of huge files
-
-function open(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB, 2);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      // v1 kept metadata and bytes together; start clean.
-      if (db.objectStoreNames.contains('recent')) db.deleteObjectStore('recent');
-      if (!db.objectStoreNames.contains(META)) db.createObjectStore(META, { keyPath: 'id' });
-      if (!db.objectStoreNames.contains(DATA)) db.createObjectStore(DATA);
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-function run<T>(stores: string[], mode: IDBTransactionMode, fn: (t: IDBTransaction) => IDBRequest<T> | void): Promise<T | undefined> {
-  return open().then(
-    (db) =>
-      new Promise((resolve, reject) => {
-        const t = db.transaction(stores, mode);
-        const req = fn(t);
-        t.oncomplete = () => {
-          db.close();
-          resolve(req ? req.result : undefined);
-        };
-        t.onerror = () => reject(t.error);
-      }),
-  );
-}
 
 /** List recent files, newest first. Reads metadata only. */
 export async function listRecent(): Promise<RecentFile[]> {

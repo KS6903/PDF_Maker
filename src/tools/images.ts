@@ -58,7 +58,7 @@ export const imagesToPdfTool: Tool = {
       accept: 'image/*',
       multiple: true,
       title: 'Choose images or drop them here',
-      hint: 'JPG, PNG, WebP, GIF, BMP, SVG — one page per image',
+      hint: 'JPG, PNG, WebP, GIF, BMP, SVG. One page per image',
       icon: ImagePlus,
       onFiles: (files) => {
         for (const f of files) if (f.type.startsWith('image/')) items.push({ file: f, url: URL.createObjectURL(f) });
@@ -163,10 +163,10 @@ export const pdfToImagesTool: Tool = {
     );
     const dpi = select<string>(
       [
-        ['72', 'Screen — 72 DPI'],
-        ['150', 'Standard — 150 DPI'],
-        ['300', 'Print — 300 DPI'],
-        ['600', 'High — 600 DPI'],
+        ['72', 'Screen (72 DPI)'],
+        ['150', 'Standard (150 DPI)'],
+        ['300', 'Print (300 DPI)'],
+        ['600', 'High (600 DPI)'],
       ],
       '150',
     );

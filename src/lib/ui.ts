@@ -164,10 +164,10 @@ export function toast(message: string, kind: 'info' | 'error' | 'success' = 'inf
   setTimeout(() => t.remove(), kind === 'error' ? 6400 : 3900);
 }
 
-let busyEl: HTMLElement | null = null;
 export async function withBusy<T>(message: string, fn: (progress: (text: string) => void) => Promise<T>): Promise<T | undefined> {
   const label = h('span', null, message);
-  busyEl = h('div', { class: 'busy' }, h('div', { class: 'busy-card' }, h('div', { class: 'spinner' }), label));
+  // Each call owns its overlay, so nested calls can't remove each other's.
+  const busyEl = h('div', { class: 'busy' }, h('div', { class: 'busy-card' }, h('div', { class: 'spinner' }), label));
   document.body.append(busyEl);
   // Let the overlay paint before heavy synchronous work starts.
   await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
@@ -178,8 +178,7 @@ export async function withBusy<T>(message: string, fn: (progress: (text: string)
     toast(errorMessage(err), 'error');
     return undefined;
   } finally {
-    busyEl?.remove();
-    busyEl = null;
+    busyEl.remove();
   }
 }
 

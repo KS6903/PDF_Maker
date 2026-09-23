@@ -119,7 +119,7 @@ export const extractTool: Tool = {
         const byLines = layout.value === 'lines';
         const pageTexts = data.map((paras) => paras.map((p) => (byLines ? p.map((l) => l.text.trimEnd()).join('\n') : joinPara(p))));
         const plain = pageTexts.map((p) => p.join('\n\n')).join('\n\n\f\n\n');
-        output.value = plain.replace(/\f/g, '— page break —');
+        output.value = plain.replace(/\f/g, '[page break]');
         output.hidden = false;
         copyBtn.hidden = false;
         if (!plain.replace(/\f/g, '').trim()) {

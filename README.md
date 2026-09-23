@@ -19,7 +19,7 @@ Save dialog. Nothing is ever uploaded. This is enforced, not just promised:
 | --- | --- | --- |
 | Edit & sign | **Edit & sign** | Fill-in suggestions mark blank lines, underscores, "Label:" gaps, checkboxes and real form fields, so you can click and type. Add text, edit existing text, draw, highlight, white-out, rectangles, lines, arrows, check/cross marks, images and signatures. Undo/redo, zoom, keyboard shortcuts. |
 | | **Fill forms** | Fill text fields, checkboxes, dropdowns and radio buttons; optionally flatten. |
-| | **Watermark** | Text watermark — centered, tiled, top or bottom, with color, opacity and angle. |
+| | **Watermark** | Text watermark, centered, tiled, top or bottom, with color, opacity and angle. |
 | | **Page numbers & headers** | "Page 1 of 10" style numbers or any header/footer text, six positions. |
 | Organize | **Organize pages** | Drag to reorder, rotate, delete, duplicate, insert blank pages, append another PDF. |
 | | **Merge PDFs** | Combine files in any order, with optional page ranges per file. |
@@ -27,7 +27,7 @@ Save dialog. Nothing is ever uploaded. This is enforced, not just promised:
 | | **Compress** | Lossless restructuring, or re-render pages as optimized images for big savings. |
 | Convert | **Create PDF** | Write in Markdown/plain text/HTML with live preview, or import **Word (.docx)**, HTML, Markdown or text files. |
 | | **Images → PDF** | JPG, PNG, WebP, GIF, BMP, SVG → PDF with page size, orientation, margins, fit/fill. |
-| | **PDF → Images** | PNG, JPG or WebP at 72–600 DPI. |
+| | **PDF → Images** | PNG, JPG or WebP at 72-600 DPI. |
 | | **PDF → Text & Word** | Extract text to `.txt` or an editable `.docx`. |
 | Secure & info | **Protect with password** | AES-256 encryption with print/copy/edit permissions. |
 | | **Remove password** | Save an unlocked copy of a PDF you have the password for. |
@@ -43,6 +43,10 @@ The editor keeps several PDFs open at once, each in its own tab with its own edi
 zoom and scroll position. Open more with the **+** button, by dropping files onto the page area,
 or from the home screen. A dot marks unsaved edits, **Save PDF** saves the tab you're on, and
 closing a tab with unsaved edits asks first. Ctrl+W closes a tab, Ctrl+Tab switches.
+
+Tabs stay until you close them. Quitting the app, or switching to another tool and back,
+keeps every open document, its unsaved edits, zoom and scroll position, all stored on this
+computer.
 
 ## Filling and signing
 
@@ -71,11 +75,11 @@ npm run dist:win
 
 This produces, in `release/`:
 
-- `PDF-Maker-<version>-portable.exe` — single file, no install; just run it.
-- `PDF-Maker-<version>-setup.exe` — installer with Start-menu/desktop shortcuts and "Open with PDF Maker" for `.pdf` files.
+- `PDF-Maker-<version>-portable.exe`, single file, no install; just run it.
+- `PDF-Maker-<version>-setup.exe`, installer with Start-menu/desktop shortcuts and "Open with PDF Maker" for `.pdf` files.
 
 The executables are unsigned, so Windows SmartScreen may show "Windows protected your PC" the first
-time — click **More info → Run anyway**. On launch the app shows a splash window with the logo,
+time, click **More info → Run anyway**. On launch the app shows a splash window with the logo,
 name and version until the main window is ready.
 
 ## Sending updates
@@ -121,7 +125,7 @@ encryption), [pdf.js](https://mozilla.github.io/pdf.js/) (rendering and text ext
 - New text uses the standard PDF fonts (Helvetica, Times, Courier), which cover Western European
   characters. Other scripts (e.g. Chinese, Arabic, Cyrillic) are shown as `?` in text you add;
   existing text in your PDFs is always preserved.
-- "Edit existing text" covers the original with white-out and places new text on top — it does
+- "Edit existing text" covers the original with white-out and places new text on top, it does
   not rewrite the PDF's internal text.
 - Scanned PDFs are images, so text extraction returns nothing for them (no OCR).
 - Word import keeps text, headings, lists, tables and images, but not exact page layout.

@@ -40,7 +40,7 @@ export const metadataTool: Tool = {
           const key = `${Math.round(width)} × ${Math.round(height)} pt (${((width / 72) * 25.4).toFixed(0)} × ${((height / 72) * 25.4).toFixed(0)} mm)`;
           sizes.set(key, (sizes.get(key) ?? 0) + 1);
         }
-        const fmt = (d?: Date) => (d ? d.toLocaleString() : '—');
+        const fmt = (d?: Date) => (d ? d.toLocaleString() : '-');
         const facts: [string, string][] = [
           ['Pages', String(doc.getPageCount())],
           ['File size', formatBytes(src.bytes.byteLength)],

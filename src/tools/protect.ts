@@ -13,7 +13,7 @@ export const protectTool: Tool = {
   mount(el, ctx) {
     const pw = textInput('', 'Password to open the file', 'password');
     const pw2 = textInput('', 'Repeat password', 'password');
-    const owner = textInput('', 'Optional — defaults to the open password', 'password');
+    const owner = textInput('', 'Optional, defaults to the open password', 'password');
     const print = checkbox('Allow printing', true);
     const copy = checkbox('Allow copying text and images', false);
     const modify = checkbox('Allow editing', false);
@@ -47,7 +47,7 @@ export const protectTool: Tool = {
           },
         });
         const out = await doc.save();
-        toast('Encrypted. Keep your password safe — it can’t be recovered.', 'success');
+        toast('Encrypted. Keep your password safe. It can’t be recovered.', 'success');
         return [pdfOutput(`${baseName(src.name)}-protected`, out)];
       },
     });

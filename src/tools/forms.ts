@@ -86,7 +86,7 @@ export const formsTool: Tool = {
       if (f instanceof PDFDropdown || f instanceof PDFRadioGroup) {
         const opts = f.getOptions();
         const current = f instanceof PDFDropdown ? f.getSelected()[0] : f.getSelected();
-        const s = h('select', null, h('option', { value: '' }, '—'), opts.map((o) => h('option', { value: o }, o))) as HTMLSelectElement;
+        const s = h('select', null, h('option', { value: '' }, '-'), opts.map((o) => h('option', { value: o }, o))) as HTMLSelectElement;
         s.value = current ?? '';
         values.set(name, () => s.value);
         return field(label, s);

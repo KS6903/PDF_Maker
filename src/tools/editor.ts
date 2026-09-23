@@ -35,6 +35,7 @@ import { FontCache, FONT_OPTIONS, CSS_FONT, baselineEm, safeText, type FontFamil
 import { signatureDialog } from './signature';
 import { fromWidgets, fromText, fromCanvas, mergeSuggestions, overlap, type Suggestion } from '../lib/detect';
 import { rememberEntry, suggestEntries, forgetEntry, forgetAll } from '../lib/autofill';
+import { loadSession, saveSession, getSessionFile, clearSession } from '../lib/session';
 import { pdfInput, resultsPanel, type Tool } from './common';
 
 /* ---------- annotation model (visual page coordinates, points, origin top-left) ---------- */
@@ -266,6 +267,7 @@ export const editorTool: Tool = {
     const workspace = h('div', { class: 'ed-workspace', hidden: true }, tabsEl, bar, hint, h('div', { class: 'ed-stage' }, scroller, viewPill), h('div', { class: 'ed-results' }, results.el));
 
     const input = pdfInput(ctx, (s) => void openDoc(s));
+    void restoreSession();
     const intro = h('div', { class: 'ed-intro' }, input.el);
     scroller.addEventListener('dragover', (e) => e.preventDefault());
     scroller.addEventListener('drop', async (e) => {
@@ -295,6 +297,7 @@ export const editorTool: Tool = {
       pagesEl: HTMLElement;
       observer: IntersectionObserver | null;
       scrollTop: number;
+      fileId: string;
     }
     const docs: DocState[] = [];
     let activeDoc = -1;
@@ -389,9 +392,67 @@ export const editorTool: Tool = {
       if (i === activeDoc || !docs[i]) return;
       captureActive();
       activate(i);
+      void rememberSession();
     }
 
-    async function openDoc(s: PdfSource | null) {
+    /**
+     * Tabs stay open until the user closes them: the open documents and their
+     * unsaved edits are stored on this computer and restored on the next start.
+     */
+    const storedFiles = new Set<string>();
+    let sessionTimer = 0;
+    let restoring = false;
+    /**
+     * @param immediate write now instead of after the usual short delay
+     * @param allowClear wipe the stored session when nothing is open; only the
+     *   user closing the last tab may do this, never a reload or a tool switch
+     */
+    function rememberSession(immediate = false, allowClear = false) {
+      clearTimeout(sessionTimer);
+      if (restoring) return Promise.resolve();
+      const write = () => {
+        const live = docs.map((d, i) =>
+          i === activeDoc
+            ? { fileId: d.fileId, name: d.src.name, bytes: d.src.bytes, anns: anns as unknown[], nextId, zoom, scrollTop: scroller.scrollTop, dirty }
+            : { fileId: d.fileId, name: d.src.name, bytes: d.src.bytes, anns: d.anns as unknown[], nextId: d.nextId, zoom: d.zoom, scrollTop: d.scrollTop, dirty: d.dirty },
+        );
+        if (live.length) return saveSession(live, activeDoc, storedFiles);
+        return allowClear ? clearSession() : Promise.resolve();
+      };
+      if (immediate) return write();
+      sessionTimer = window.setTimeout(() => void write(), 700);
+      return Promise.resolve();
+    }
+
+    /** Reopen the documents that were open last time. */
+    async function restoreSession() {
+      const saved = await loadSession();
+      if (!saved) return;
+      restoring = true;
+      await withBusy('Restoring your documents…', async (progress) => {
+        for (const [i, tab] of saved.tabs.entries()) {
+          progress(`Restoring ${tab.name} (${i + 1} of ${saved.tabs.length})…`);
+          const bytes = await getSessionFile(tab.fileId);
+          if (!bytes) continue;
+          const src = await openPdf({ name: tab.name, bytes });
+          if (!src) continue; // password prompt cancelled
+          storedFiles.add(tab.fileId);
+          await openDoc(src, {
+            fileId: tab.fileId,
+            anns: tab.anns as Ann[],
+            nextId: tab.nextId,
+            zoom: tab.zoom,
+            scrollTop: tab.scrollTop,
+            dirty: tab.dirty,
+          });
+        }
+      });
+      restoring = false;
+      if (docs[saved.active]) switchDoc(saved.active);
+      void rememberSession(true);
+    }
+
+    async function openDoc(s: PdfSource | null, restore?: { fileId: string; anns: Ann[]; nextId: number; zoom: number; scrollTop: number; dirty: boolean }) {
       if (!s) return;
       captureActive();
       const d: DocState = {
@@ -409,6 +470,7 @@ export const editorTool: Tool = {
         pagesEl: h('div', { class: 'ed-pages' }),
         observer: null,
         scrollTop: 0,
+        fileId: restore?.fileId ?? `f${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       };
       scroller.append(d.pagesEl);
       docs.push(d);
@@ -442,9 +504,22 @@ export const editorTool: Tool = {
       intro.hidden = true;
       activate(docs.indexOf(d));
       d.pages.forEach(bindLayer);
-      fitWidth();
+      if (restore) {
+        anns = restore.anns;
+        nextId = restore.nextId;
+        dirty = restore.dirty;
+        d.dirty = restore.dirty;
+        lastSnap = JSON.stringify(anns);
+        setZoom(restore.zoom);
+        scroller.scrollTop = restore.scrollTop;
+        pages.forEach(renderLayer);
+        renderTabs();
+      } else {
+        fitWidth();
+      }
       setTool('select');
       updatePageLabel();
+      void rememberSession();
     }
 
     async function closeDoc(i: number) {
@@ -456,6 +531,8 @@ export const editorTool: Tool = {
       d.observer?.disconnect();
       d.pagesEl.remove();
       docs.splice(i, 1);
+      storedFiles.delete(d.fileId);
+      void rememberSession(true, true);
       if (!docs.length) {
         activeDoc = -1;
         src = null;
@@ -716,6 +793,7 @@ export const editorTool: Tool = {
         if (docs[activeDoc]) docs[activeDoc].dirty = true;
         renderTabs();
       }
+      void rememberSession();
     }
     function undo() {
       finishEditing();
@@ -1406,6 +1484,7 @@ export const editorTool: Tool = {
       dirty = false;
       if (docs[activeDoc]) docs[activeDoc].dirty = false;
       renderTabs();
+      void rememberSession(true);
       results.show([pdfOutput(`${baseName(s.name)}-edited`, out)]);
     }
 
@@ -1413,6 +1492,7 @@ export const editorTool: Tool = {
       document.removeEventListener('keydown', onKey);
       window.removeEventListener('resize', onResize);
       window.removeEventListener('beforeunload', onBeforeUnload);
+      void rememberSession(true);
       for (const d of docs) {
         d.observer?.disconnect();
         void d.js?.loadingTask.destroy();

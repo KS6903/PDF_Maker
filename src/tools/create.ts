@@ -10,7 +10,7 @@ type Format = 'markdown' | 'text' | 'html';
 
 const SAMPLE = `# My document
 
-Write here using **Markdown** — or just type plain text. The preview updates as you type.
+Write here using **Markdown**, or just type plain text. The preview updates as you type.
 
 ## What you can use
 
