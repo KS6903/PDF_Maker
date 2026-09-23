@@ -19,6 +19,7 @@ function pdfFromArgs(argv) {
   return argv.slice(1).find((a) => /\.pdf$/i.test(a) && fs.existsSync(a)) ?? null;
 }
 
+const startedAt = Date.now();
 let win = null;
 let launchFile = pdfFromArgs(process.argv);
 
@@ -36,6 +37,37 @@ if (!app.requestSingleInstanceLock()) {
 
 function readPdf(file) {
   return { name: path.basename(file), data: new Uint8Array(fs.readFileSync(file)) };
+}
+
+/**
+ * A small frameless window shown while the app starts, so there's something to
+ * look at instead of an empty frame. Closed as soon as the app is ready.
+ */
+let splash = null;
+function createSplash() {
+  splash = new BrowserWindow({
+    width: 470,
+    height: 250,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: true,
+    center: true,
+    show: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    backgroundColor: '#00000000',
+    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
+  });
+  splash.loadFile(path.join(__dirname, 'splash.html'), { query: { v: app.getVersion() } });
+  splash.once('ready-to-show', () => splash?.show());
+  // Never let a stuck splash hide the app.
+  setTimeout(closeSplash, 15000);
+}
+
+function closeSplash() {
+  if (splash && !splash.isDestroyed()) splash.destroy();
+  splash = null;
 }
 
 function createWindow() {
@@ -57,7 +89,15 @@ function createWindow() {
       spellcheck: true,
     },
   });
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => {
+    // Give the splash a moment so it doesn't flash past on fast machines.
+    const minShow = Number(process.env.PDFMAKER_SPLASH_MS) || 900; // overridable for screenshots
+    const wait = Math.max(0, minShow - (Date.now() - startedAt));
+    setTimeout(() => {
+      closeSplash();
+      win?.show();
+    }, wait);
+  });
   win.loadURL(`${ORIGIN}/index.html`);
 
   // Links open in the user's browser, never inside the app.
@@ -84,6 +124,7 @@ function createWindow() {
   });
 
   win.on('closed', () => (win = null));
+  win.webContents.on('did-fail-load', closeSplash);
 }
 
 app.whenReady().then(() => {
@@ -113,6 +154,7 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((_wc, perm, callback) => callback(perm === 'clipboard-sanitized-write'));
 
   Menu.setApplicationMenu(null);
+  createSplash();
   createWindow();
   setupUpdater(() => win);
 

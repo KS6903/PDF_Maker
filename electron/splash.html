@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'self'" />
+    <title>PDF Maker</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: transparent;
+        -webkit-user-select: none;
+        user-select: none;
+        cursor: default;
+      }
+      .card {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        height: 100%;
+        padding: 28px 30px 22px;
+        border-radius: 14px;
+        background: linear-gradient(150deg, #ffffff 0%, #fbf6f4 55%, #f6e7e2 100%);
+        box-shadow: 0 18px 50px rgb(30 20 16 / 0.35);
+        font: 14px/1.5 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+        color: #1e1d1a;
+        /* The window is frameless: let people drag it by the card. */
+        -webkit-app-region: drag;
+      }
+      .top {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      .logo {
+        width: 64px;
+        height: 64px;
+        border-radius: 15px;
+        box-shadow: 0 6px 18px rgb(194 65 45 / 0.35);
+      }
+      h1 {
+        margin: 0;
+        font-family: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+        font-size: 27px;
+        font-weight: 650;
+        letter-spacing: -0.01em;
+      }
+      .tagline {
+        margin-top: 2px;
+        color: #6b6860;
+        font-size: 13.5px;
+      }
+      .bottom {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .status {
+        color: #6b6860;
+        font-size: 12.5px;
+      }
+      .version {
+        color: #a39d94;
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+      .bar {
+        position: absolute;
+        left: 30px;
+        right: 30px;
+        bottom: 52px;
+        height: 3px;
+        border-radius: 2px;
+        background: rgb(194 65 45 / 0.16);
+        overflow: hidden;
+      }
+      .bar::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        width: 40%;
+        border-radius: 2px;
+        background: #c2412d;
+        animation: slide 1.15s cubic-bezier(0.55, 0, 0.45, 1) infinite;
+      }
+      @keyframes slide {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(250%);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .bar::after {
+          animation: none;
+          width: 100%;
+          opacity: 0.5;
+        }
+      }
+      @media (prefers-color-scheme: dark) {
+        .card {
+          background: linear-gradient(150deg, #24211e 0%, #1e1b19 55%, #2c201c 100%);
+          color: #ecebe6;
+        }
+        .tagline,
+        .status {
+          color: #a19d93;
+        }
+        .version {
+          color: #77726a;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="top">
+        <img class="logo" src="icon.png" alt="" />
+        <div>
+          <h1>PDF Maker</h1>
+          <div class="tagline">Edit, sign and convert PDFs — all on your computer</div>
+        </div>
+      </div>
+      <div class="bar"></div>
+      <div class="bottom">
+        <span class="status" id="status">Starting…</span>
+        <span class="version" id="version"></span>
+      </div>
+    </div>
+    <script src="splash.js"></script>
+  </body>
+</html>

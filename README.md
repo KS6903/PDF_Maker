@@ -71,11 +71,12 @@ npm run dist:win
 
 This produces, in `release/`:
 
-- `PDF-Maker-1.0.0-portable.exe` — single file, no install; just run it.
-- `PDF-Maker-1.0.0-setup.exe` — installer with Start-menu/desktop shortcuts and "Open with PDF Maker" for `.pdf` files.
+- `PDF-Maker-<version>-portable.exe` — single file, no install; just run it.
+- `PDF-Maker-<version>-setup.exe` — installer with Start-menu/desktop shortcuts and "Open with PDF Maker" for `.pdf` files.
 
 The executables are unsigned, so Windows SmartScreen may show "Windows protected your PC" the first
-time — click **More info → Run anyway**.
+time — click **More info → Run anyway**. On launch the app shows a splash window with the logo,
+name and version until the main window is ready.
 
 ## Sending updates
 
