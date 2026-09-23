@@ -17,7 +17,7 @@ Save dialog. Nothing is ever uploaded. This is enforced, not just promised:
 
 | Group | Tool | What it does |
 | --- | --- | --- |
-| Edit & sign | **Edit & sign** | Add text, edit existing text, draw, highlight, white-out, rectangles, lines, arrows, check/cross marks, images and signatures (draw, type or upload). Undo/redo, zoom, keyboard shortcuts. |
+| Edit & sign | **Edit & sign** | Fill-in suggestions mark blank lines, underscores, "Label:" gaps, checkboxes and real form fields, so you can click and type. Add text, edit existing text, draw, highlight, white-out, rectangles, lines, arrows, check/cross marks, images and signatures. Undo/redo, zoom, keyboard shortcuts. |
 | | **Fill forms** | Fill text fields, checkboxes, dropdowns and radio buttons; optionally flatten. |
 | | **Watermark** | Text watermark — centered, tiled, top or bottom, with color, opacity and angle. |
 | | **Page numbers & headers** | "Page 1 of 10" style numbers or any header/footer text, six positions. |
@@ -34,6 +34,26 @@ Save dialog. Nothing is ever uploaded. This is enforced, not just promised:
 | | **Properties & metadata** | View page sizes and details; edit or strip title, author, keywords, etc. |
 
 Every result has a **Continue with…** menu so you can chain tools (e.g. merge → compress → protect).
+The home screen lists recommended tools and recently opened files, and the top bar has a tool
+search (Ctrl+K) and an **Open file** button.
+
+## Filling and signing
+
+- **Suggestion boxes.** Open a PDF in the editor and it marks the places meant to be filled in:
+  blank lines, runs of underscores, labels like "Date:" followed by empty space, checkbox glyphs,
+  and any real form fields. Click a box and type; clicking a checkbox box places a check mark.
+  Text typed into a real form field is stored as that field's value rather than painted on top.
+- **Autofill.** Entries you type (name, email, address, phone…) are remembered on this computer
+  and offered the next time, with entries used for the same kind of label ranked first. Each entry
+  can be deleted, or clear them all with "Forget all remembered entries".
+- **Signatures.** Draw (pressure-sensitive, three pen widths, any ink colour), type in one of five
+  handwriting styles, or upload an image, which is kept at full resolution. Save as many
+  signatures and initials as you like and reuse them with one click. **All pages** stamps the
+  selected signature or initials onto every page.
+- **Recent files.** Files you open are listed on the home screen so you can pick up where you left
+  off.
+
+All of this is stored only in this computer's local storage and can be cleared from the app.
 
 ## Windows app
 
