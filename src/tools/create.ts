@@ -205,6 +205,8 @@ export const createTool: Tool = {
         h('aside', { class: 'preview' }, h('div', { class: 'preview-head' }, h('strong', null, 'Preview'), previewNote), preview),
       ),
     );
+    const handed = ctx.takeIncomingFiles();
+    if (handed?.length) void importFile(handed[0]);
     schedule();
     return () => clearTimeout(timer);
   },

@@ -2,10 +2,12 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('pdfMaker', {
-  /** The PDF the app was launched with ("Open with PDF Maker"), if any. */
-  getLaunchFile: () => ipcRenderer.invoke('launch-file'),
-  /** Called when another PDF is opened while the app is already running. */
-  onOpenFile: (cb) => ipcRenderer.on('open-file', (_e, file) => cb(file)),
+  /** Files the app was launched with, plus the right-click verb used, if any. */
+  getLaunchFiles: () => ipcRenderer.invoke('launch-files'),
+  /** Called when files are opened while the app is already running. */
+  onOpenFiles: (cb) => ipcRenderer.on('open-files', (_e, payload) => cb(payload)),
+  /** Add or remove the File Explorer right-click entries ('add' | 'remove' | 'status'). */
+  shellIntegration: (action) => ipcRenderer.invoke('shell-integration', action),
   /** Version, portable/installed, and current update status. */
   getAppInfo: () => ipcRenderer.invoke('app-info'),
   /** Check GitHub for a newer version now (shows a dialog with the result). */

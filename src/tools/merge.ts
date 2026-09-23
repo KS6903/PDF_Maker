@@ -96,7 +96,9 @@ export const mergeTool: Tool = {
     }
 
     el.append(zone, list, h('div', { class: 'actions' }, mergeBtn), results.el);
+    const handed = ctx.takeIncomingFiles();
     const incoming = ctx.takeIncoming();
-    if (incoming) void add([incoming]);
+    if (handed?.length) void add(handed);
+    else if (incoming) void add([incoming]);
   },
 };

@@ -129,6 +129,13 @@ export const imagesToPdfTool: Tool = {
     }
 
     el.append(zone, options, list, h('div', { class: 'actions' }, build), results.el);
+
+    // Pictures handed over from File Explorer.
+    const handed = ctx.takeIncomingFiles() ?? [];
+    for (const f of handed) {
+      if (f.type.startsWith('image/') || /\.(jpe?g|png|webp|bmp|gif|tiff?|svg)$/i.test(f.name)) items.push({ file: f, url: URL.createObjectURL(f) });
+    }
+    if (items.length) render();
   },
 };
 

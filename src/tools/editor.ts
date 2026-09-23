@@ -266,8 +266,15 @@ export const editorTool: Tool = {
     const hint = h('div', { class: 'ed-hint' }, hintText, h('span', { class: 'spacer' }), suggestBtn);
     const workspace = h('div', { class: 'ed-workspace', hidden: true }, tabsEl, bar, hint, h('div', { class: 'ed-stage' }, scroller, viewPill), h('div', { class: 'ed-results' }, results.el));
 
+    const launchFiles = ctx.takeIncomingFiles();
     const input = pdfInput(ctx, (s) => void openDoc(s));
-    void restoreSession();
+    void (async () => {
+      await restoreSession();
+      for (const file of launchFiles ?? []) {
+        const opened = await withBusy('Opening PDF…', () => openPdf(file));
+        if (opened) await openDoc(opened);
+      }
+    })();
     const intro = h('div', { class: 'ed-intro' }, input.el);
     scroller.addEventListener('dragover', (e) => e.preventDefault());
     scroller.addEventListener('drop', async (e) => {

@@ -82,6 +82,25 @@ The executables are unsigned, so Windows SmartScreen may show "Windows protected
 time, click **More info → Run anyway**. On launch the app shows a splash window with the logo,
 name and version until the main window is ready.
 
+## File Explorer right-click menu
+
+The desktop app can add entries to the Windows right-click menu:
+
+| Right-click on | Entry | Opens |
+| --- | --- | --- |
+| A PDF | Edit with PDF Maker | the editor |
+| PDFs (several selected) | Merge with PDF Maker | Merge PDFs, files queued |
+| A PDF | Compress with PDF Maker | Compress |
+| Pictures (JPG, PNG, WebP, BMP, GIF, TIFF) | Convert to PDF with PDF Maker | Images to PDF |
+| Word, text, Markdown or HTML | Convert to PDF with PDF Maker | Create PDF, file imported |
+
+The installer sets these up, and the home screen has a **File Explorer menu** panel to add or
+remove them at any time (handy for the portable build). The entries are written under
+`HKEY_CURRENT_USER`, so no admin rights are needed and no other account is touched.
+
+On Windows 11 they appear under **Show more options** (or Shift+F10). Putting items in the short
+menu requires a signed, packaged (MSIX) app, which this unsigned build isn't.
+
 ## Sending updates
 
 Installed copies (`setup.exe`) check GitHub Releases on startup and every few hours. They

@@ -3,7 +3,7 @@ import { Home, LayoutGrid, Search, FolderOpen } from 'lucide';
 import { h, icon, button } from './lib/ui';
 import type { PdfSource } from './lib/pdf';
 import type { AppContext, Tool, ToolGroup } from './tools/common';
-import { renderHome, renderAllTools, toolIcon, openInEditor, TOOL_COLORS } from './home';
+import { renderHome, renderAllTools, toolIcon, openInEditor, TOOL_COLORS, setShellIntegration } from './home';
 import { editorTool } from './tools/editor';
 import { formsTool } from './tools/forms';
 import { watermarkTool } from './tools/watermark';
@@ -38,6 +38,7 @@ const TOOLS: Tool[] = [
 const GROUPS: ToolGroup[] = ['Edit & sign', 'Organize', 'Convert', 'Secure & info'];
 
 let incoming: PdfSource | undefined;
+let incomingFiles: File[] | undefined;
 let cleanup: (() => void) | void;
 
 const ctx: AppContext = {
@@ -50,6 +51,11 @@ const ctx: AppContext = {
   takeIncoming() {
     const f = incoming;
     incoming = undefined;
+    return f;
+  },
+  takeIncomingFiles() {
+    const f = incomingFiles;
+    incomingFiles = undefined;
     return f;
   },
 };
@@ -203,20 +209,42 @@ interface UpdateStatus {
   version?: string;
   percent?: number;
 }
+interface LaunchPayload {
+  mode: 'edit' | 'merge' | 'compress' | 'images' | 'create' | null;
+  files: DesktopFile[];
+}
 interface DesktopBridge {
-  getLaunchFile(): Promise<DesktopFile | null>;
-  onOpenFile(cb: (f: DesktopFile) => void): void;
+  getLaunchFiles(): Promise<LaunchPayload | null>;
+  onOpenFiles(cb: (p: LaunchPayload | null) => void): void;
+  shellIntegration(action: 'add' | 'remove' | 'status'): Promise<{ ok: boolean; registered?: boolean; error?: string }>;
   getAppInfo(): Promise<{ version: string; portable: boolean; packaged: boolean; status: UpdateStatus }>;
   checkForUpdates(): Promise<UpdateStatus>;
   onUpdateStatus(cb: (s: UpdateStatus) => void): void;
 }
 const desktop = (window as unknown as { pdfMaker?: DesktopBridge }).pdfMaker;
-function openLaunchFile(f: DesktopFile | null) {
-  if (f) void openInEditor(ctx, { name: f.name, bytes: new Uint8Array(f.data) });
+const IMAGE_RE = /\.(jpe?g|png|webp|bmp|gif|tiff?)$/i;
+const PDF_RE = /\.pdf$/i;
+
+/** Open whatever File Explorer (or "Open with") handed us, in the fitting tool. */
+function handleLaunch(payload: LaunchPayload | null) {
+  if (!payload?.files.length) return;
+  const files = payload.files.map((f) => new File([new Uint8Array(f.data) as unknown as BlobPart], f.name, { type: PDF_RE.test(f.name) ? 'application/pdf' : '' }));
+  const tool =
+    payload.mode === 'merge' ? 'merge'
+    : payload.mode === 'compress' ? 'compress'
+    : payload.mode === 'images' ? 'images-to-pdf'
+    : payload.mode === 'create' ? 'create'
+    : files.every((f) => PDF_RE.test(f.name)) ? 'editor'
+    : files.every((f) => IMAGE_RE.test(f.name)) ? 'images-to-pdf'
+    : 'create';
+  incomingFiles = files;
+  incoming = undefined;
+  ctx.openTool(tool);
 }
 if (desktop) {
-  void desktop.getLaunchFile().then(openLaunchFile);
-  desktop.onOpenFile(openLaunchFile);
+  setShellIntegration(desktop.shellIntegration);
+  void desktop.getLaunchFiles().then(handleLaunch);
+  desktop.onOpenFiles(handleLaunch);
   void desktop.getAppInfo().then((info) => {
     const label = h('span');
     const check = h('button', { type: 'button', class: 'link-btn', onclick: () => void desktop.checkForUpdates() }, 'Check for updates');

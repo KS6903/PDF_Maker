@@ -10,6 +10,8 @@ export interface AppContext {
   openTool(id: string, file?: PdfSource): void;
   /** A PDF handed over from another tool (consumed on mount). */
   takeIncoming(): PdfSource | undefined;
+  /** Files handed over from outside the app, e.g. a File Explorer right-click. */
+  takeIncomingFiles(): File[] | undefined;
   tools: Tool[];
 }
 
@@ -125,6 +127,8 @@ export function pdfInput(ctx: AppContext, onLoad: (src: PdfSource | null) => voi
   }
 
   set(null);
+  const handed = ctx.takeIncomingFiles();
+  if (handed?.length) queueMicrotask(() => void load(handed[0]));
   const incoming = ctx.takeIncoming();
   if (incoming) {
     // After the tool has finished mounting, so its own setup runs first.

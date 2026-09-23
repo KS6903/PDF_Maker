@@ -78,7 +78,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "PDF Maker"
+      "shortcutName": "PDF Maker",
+      "include": "build/installer.nsh"
     },
     "fileAssociations": [
       {

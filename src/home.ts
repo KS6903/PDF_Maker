@@ -1,8 +1,15 @@
-import { ArrowRight, FileText, Trash2, X, Clock, ShieldCheck } from 'lucide';
+import { ArrowRight, FileText, Trash2, X, Clock, ShieldCheck, MousePointerClick } from 'lucide';
 import { h, icon, button, withBusy, formatBytes, toast } from './lib/ui';
 import { openPdf } from './lib/pdf';
 import { listRecent, getRecentBytes, removeRecent, clearRecent } from './lib/recent';
 import type { AppContext, Tool, ToolGroup } from './tools/common';
+
+type ShellIntegration = (action: 'add' | 'remove' | 'status') => Promise<{ ok: boolean; registered?: boolean; error?: string }>;
+let shellIntegration: ShellIntegration | null = null;
+/** Only the desktop app can add right-click entries to File Explorer. */
+export function setShellIntegration(fn: ShellIntegration) {
+  shellIntegration = fn;
+}
 
 /** Each tool gets its own accent so it's recognisable at a glance. */
 export const TOOL_COLORS: Record<string, string> = {
@@ -65,6 +72,7 @@ export function renderHome(ctx: AppContext, tools: Tool[]) {
       h('div', { class: 'rec-grid' }, RECOMMENDED.map((id) => byId.get(id)).filter((t): t is Tool => !!t).map((t) => toolCard(t, true))),
     ),
     h('section', { class: 'recent' }, recentBody),
+    explorerPanel(),
     h(
       'p',
       { class: 'privacy-note' },
@@ -157,6 +165,44 @@ export function renderAllTools(tools: Tool[], groups: ToolGroup[]) {
     h('section', { class: 'tool-section' }, h('h2', null, g), h('div', { class: 'tool-grid' }, tools.filter((t) => t.group === g).map((t) => toolCard(t)))),
   );
   return h('div', { class: 'home' }, h('header', { class: 'home-head' }, h('h1', null, 'All tools')), sections, empty);
+}
+
+/** Add or remove the "Convert to PDF with PDF Maker" entries in File Explorer. */
+function explorerPanel() {
+  const el = h('section', { class: 'explorer-panel', hidden: true });
+  if (!shellIntegration) return el;
+  const status = h('span', { class: 'muted small' });
+  const action = button('', () => {}, { icon: MousePointerClick });
+  let registered = false;
+
+  const paint = () => {
+    status.textContent = registered
+      ? 'Right-click a file in File Explorer to convert, edit, merge or compress it.'
+      : 'Add entries like "Convert to PDF with PDF Maker" to the File Explorer right-click menu.';
+    action.replaceChildren(h('span', null, registered ? 'Remove from File Explorer' : 'Add to File Explorer'));
+    action.className = `btn ${registered ? 'default' : 'primary'}`;
+  };
+  action.addEventListener('click', async () => {
+    action.disabled = true;
+    const res = await shellIntegration!(registered ? 'remove' : 'add');
+    action.disabled = false;
+    if (!res.ok) return toast(res.error ?? 'Could not change the right-click menu.', 'error');
+    registered = !registered;
+    paint();
+    toast(registered ? 'Added to the File Explorer menu.' : 'Removed from the File Explorer menu.', 'success');
+  });
+
+  void shellIntegration('status').then((res) => {
+    registered = !!res.registered;
+    paint();
+    el.replaceChildren(
+      h('div', { class: 'explorer-head' }, icon(MousePointerClick, 18), h('strong', null, 'File Explorer menu'), h('span', { class: 'spacer' }), action),
+      status,
+      h('span', { class: 'muted small' }, 'On Windows 11 these appear under "Show more options".'),
+    );
+    el.hidden = false;
+  });
+  return el;
 }
 
 function timeAgo(ts: number) {

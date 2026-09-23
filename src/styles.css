@@ -1929,3 +1929,26 @@ main.wide .tool-content {
   background: var(--sunken);
   color: var(--text);
 }
+
+/* ---------- File Explorer integration ---------- */
+.explorer-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.explorer-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.explorer-head svg {
+  color: var(--accent);
+}
+.explorer-head strong {
+  font-size: 15px;
+}

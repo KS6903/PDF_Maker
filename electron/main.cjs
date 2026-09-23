@@ -5,6 +5,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { setupUpdater } = require('./updater.cjs');
+const shellIntegration = require('./shell-integration.cjs');
 
 const DIST = path.join(__dirname, '..', 'dist');
 const ORIGIN = 'app://pdfmaker';
@@ -14,29 +15,50 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
 ]);
 
-/** A .pdf path passed on the command line (e.g. "Open with PDF Maker"). */
-function pdfFromArgs(argv) {
-  return argv.slice(1).find((a) => /\.pdf$/i.test(a) && fs.existsSync(a)) ?? null;
+const OPENABLE = /\.(pdf|jpe?g|png|webp|bmp|gif|tiff?|docx|txt|md|markdown|html?)$/i;
+
+/**
+ * What the app was asked to do, from "Open with" or a right-click entry:
+ * a mode (--edit, --merge, --compress, --images, --create) and the files.
+ */
+function requestFromArgs(argv) {
+  const rest = argv.slice(1).filter((a) => a !== '.' && !a.startsWith('--remote') && !a.startsWith('--enable'));
+  const mode = (rest.find((a) => /^--(edit|merge|compress|images|create)$/.test(a)) ?? '').replace(/^--/, '') || null;
+  const files = rest.filter((a) => !a.startsWith('--') && OPENABLE.test(a) && fs.existsSync(a));
+  return files.length ? { mode, files } : null;
 }
 
 const startedAt = Date.now();
 let win = null;
-let launchFile = pdfFromArgs(process.argv);
+let launchRequest = requestFromArgs(process.argv);
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', (_e, argv) => {
-    const file = pdfFromArgs(argv);
+    const request = requestFromArgs(argv);
     if (!win) return;
     if (win.isMinimized()) win.restore();
     win.focus();
-    if (file) win.webContents.send('open-file', readPdf(file));
+    if (request) win.webContents.send('open-files', readRequest(request));
   });
 }
 
 function readPdf(file) {
   return { name: path.basename(file), data: new Uint8Array(fs.readFileSync(file)) };
+}
+
+/** Load the requested files, skipping any that can't be read. */
+function readRequest(request) {
+  const files = [];
+  for (const file of request.files) {
+    try {
+      files.push(readPdf(file));
+    } catch (err) {
+      console.error('Could not read', file, err);
+    }
+  }
+  return files.length ? { mode: request.mode, files } : null;
 }
 
 /**
@@ -136,10 +158,17 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(file).toString());
   });
 
-  ipcMain.handle('launch-file', () => {
-    const file = launchFile;
-    launchFile = null;
-    return file ? readPdf(file) : null;
+  ipcMain.handle('launch-files', () => {
+    const request = launchRequest;
+    launchRequest = null;
+    return request ? readRequest(request) : null;
+  });
+
+  // File Explorer right-click entries, added per user, no admin rights needed.
+  ipcMain.handle('shell-integration', (_e, action) => {
+    if (action === 'add') return shellIntegration.register();
+    if (action === 'remove') return shellIntegration.unregister();
+    return { ok: true, registered: shellIntegration.isRegistered() };
   });
 
   // Privacy guarantee: the app window can never reach the network. Files are
