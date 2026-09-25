@@ -1,48 +1,77 @@
+/*
+ * Light is the default. Dark applies when Windows asks for it, unless the user
+ * has pinned light, and always when the user has pinned dark. src/lib/theme.ts
+ * writes that choice to <html data-theme> and remembers it across restarts.
+ */
 :root {
-  --bg: #f5f4f0;
+  --bg: #f1f1f1;
   --surface: #ffffff;
-  --surface-2: #faf9f6;
-  --sunken: #ebe9e3;
-  --border: #dedbd3;
-  --border-strong: #c9c5bb;
-  --text: #1e1d1a;
-  --muted: #6b6860;
-  --accent: #c2412d;
-  --accent-hover: #a93624;
-  --accent-soft: #f7e3de;
+  --surface-2: #fafafa;
+  --sunken: #ebebeb;
+  --border: #e1e1e1;
+  --border-strong: #c7c7c7;
+  --text: #1f1f1f;
+  --muted: #6e6e6e;
+  --accent: #1473e6;
+  --accent-hover: #0d66d0;
+  --accent-soft: #e4effc;
   --accent-text: #ffffff;
-  --focus: #2f6fdd;
+  --focus: #1473e6;
   --danger: #b42318;
   --success: #1a7f37;
-  --shadow: 0 1px 2px rgb(30 29 26 / 0.06), 0 4px 16px rgb(30 29 26 / 0.06);
-  --shadow-lg: 0 12px 40px rgb(30 29 26 / 0.18);
+  --canvas: #d6d6d6;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 4px 16px rgb(0 0 0 / 0.07);
+  --shadow-lg: 0 12px 40px rgb(0 0 0 / 0.18);
   --radius: 10px;
   --radius-sm: 7px;
-  --sidebar: 244px;
+  --panel: 264px;
+  --appbar-h: 44px;
+  --ribbon-h: 46px;
   --font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
   --font-display: 'Segoe UI Variable Display', 'Segoe UI', system-ui, -apple-system, sans-serif;
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #171614;
-    --surface: #211f1c;
-    --surface-2: #1c1b18;
-    --sunken: #2b2925;
-    --border: #36332e;
-    --border-strong: #4a4640;
-    --text: #ecebe6;
-    --muted: #a19d93;
-    --accent: #e0654f;
-    --accent-hover: #ec7a65;
-    --accent-soft: #3d2520;
-    --accent-text: #1a0d0a;
-    --focus: #6d9bff;
-    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 16px rgb(0 0 0 / 0.25);
-    --shadow-lg: 0 12px 40px rgb(0 0 0 / 0.5);
+  :root:not([data-theme='light']) {
+    --bg: #1d1d1d;
+    --surface: #2b2b2b;
+    --surface-2: #242424;
+    --sunken: #363636;
+    --border: #3a3a3a;
+    --border-strong: #545454;
+    --text: #e8e8e8;
+    --muted: #a3a3a3;
+    --accent: #4b9eff;
+    --accent-hover: #6cb0ff;
+    --accent-soft: #1e3a5c;
+    --accent-text: #0a1a2c;
+    --focus: #6cb0ff;
+    --canvas: #141414;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px rgb(0 0 0 / 0.3);
+    --shadow-lg: 0 12px 40px rgb(0 0 0 / 0.55);
     color-scheme: dark;
   }
+}
+
+:root[data-theme='dark'] {
+  --bg: #1d1d1d;
+  --surface: #2b2b2b;
+  --surface-2: #242424;
+  --sunken: #363636;
+  --border: #3a3a3a;
+  --border-strong: #545454;
+  --text: #e8e8e8;
+  --muted: #a3a3a3;
+  --accent: #4b9eff;
+  --accent-hover: #6cb0ff;
+  --accent-soft: #1e3a5c;
+  --accent-text: #0a1a2c;
+  --focus: #6cb0ff;
+  --canvas: #141414;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px rgb(0 0 0 / 0.3);
+  --shadow-lg: 0 12px 40px rgb(0 0 0 / 0.55);
+  color-scheme: dark;
 }
 
 * {
@@ -90,78 +119,18 @@ a {
 /* ---------- layout ---------- */
 #app {
   display: grid;
-  grid-template-columns: var(--sidebar) 1fr;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: var(--appbar-h) var(--ribbon-h) 1fr;
   height: 100%;
+  min-height: 0;
 }
-.sidebar {
-  background: var(--surface-2);
-  border-right: 1px solid var(--border);
-  padding: 14px 10px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.workarea {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  min-height: 0;
+  background: var(--bg);
 }
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 6px;
-  margin-right: 10px;
-  font-family: var(--font-display);
-  font-weight: 650;
-  font-size: 16px;
-  text-decoration: none;
-  white-space: nowrap;
-}
-.brand-mark {
-  display: block;
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
-}
-.nav-group {
-  margin-top: 12px;
-}
-.nav-heading {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
-  padding: 4px 10px;
-}
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 7px 10px;
-  border-radius: var(--radius-sm);
-  text-decoration: none;
-  color: var(--text);
-  transition: background 0.12s;
-}
-.nav-item svg {
-  color: var(--muted);
-  flex: none;
-}
-.nav-item:hover {
-  background: var(--sunken);
-}
-.nav-item.active {
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-weight: 600;
-}
-.nav-item.active svg {
-  color: var(--accent);
-}
-.nav-foot {
-  margin-top: auto;
-  padding: 16px 10px 4px;
-  font-size: 12px;
-  color: var(--muted);
+.workarea > .toolpanel[hidden] {
+  display: none !important;
 }
 
 main {
@@ -1281,34 +1250,23 @@ main.wide .tool-content {
     grid-column: 1 / -1;
   }
 }
-@media (max-width: 720px) {
-  #app {
+@media (max-width: 860px) {
+  .workarea {
     grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
   }
-  .sidebar {
-    flex-direction: row;
-    overflow-x: auto;
+  /* The panel takes the whole work area rather than squeezing the page. */
+  .toolpanel {
+    width: auto;
     border-right: 0;
     border-bottom: 1px solid var(--border);
-    padding: 8px;
   }
-  .nav-group,
-  .nav-heading,
-  .nav-foot {
-    display: contents;
-  }
-  .nav-heading,
-  .nav-foot {
+  .toolpanel:not([hidden]) + main {
     display: none;
   }
-  .nav-tabs span,
   .search kbd,
-  .brand span {
+  .menu-btn span,
+  .tab-add span {
     display: none;
-  }
-  .nav-item span {
-    white-space: nowrap;
   }
   main {
     padding: 20px 16px 48px;
@@ -1326,16 +1284,14 @@ main.wide .tool-content {
   }
 }
 
-/* Compact sidebar on shorter windows (e.g. laptops at 125% scaling). */
+/* Compact tool panel on shorter windows (e.g. laptops at 125% scaling). */
 @media (max-height: 860px) {
-  .nav-item {
-    padding: 5px 10px;
+  .panel-item {
+    padding: 4px 8px;
   }
-  .nav-group {
-    margin-top: 6px;
-  }
-  .brand {
-    padding-bottom: 10px;
+  .panel-head {
+    padding-top: 10px;
+    padding-bottom: 6px;
   }
 }
 * {
@@ -1343,17 +1299,6 @@ main.wide .tool-content {
   scrollbar-color: var(--border-strong) transparent;
 }
 
-.nav-foot {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.update-line {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-}
 .link-btn {
   padding: 0;
   border: 0;
@@ -1368,44 +1313,330 @@ main.wide .tool-content {
   color: var(--accent-hover);
 }
 
-/* ---------- top navbar ---------- */
-.topbar {
-  grid-column: 1 / -1;
+/* ---------- app bar ---------- */
+.appbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  z-index: 30;
+  min-width: 0;
+}
+.appbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 550;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.appbar-btn.icon-only {
+  padding: 0 7px;
+}
+.appbar-btn:hover {
+  background: var(--sunken);
+}
+.appbar-btn[aria-expanded='true'] {
+  background: var(--sunken);
+}
+
+/* Document tab strip, the way Acrobat shows open files. */
+.doc-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin-left: 6px;
+}
+.doc-tab {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 56px;
-  padding: 0 16px 0 12px;
+  height: 30px;
+  max-width: 220px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-weight: 550;
+  white-space: nowrap;
+}
+.doc-tab.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.doc-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tab-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 11px;
+  margin-left: 4px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 550;
+  white-space: nowrap;
+}
+.tab-add:hover {
+  background: var(--sunken);
+}
+
+/* ---------- menu popover ---------- */
+.menu-wrap {
+  position: relative;
+}
+.menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 260px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  z-index: 40;
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.menu-item:hover {
+  background: var(--sunken);
+}
+.menu-sep {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--border);
+}
+.menu-label {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.menu-note {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.theme-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 2px 4px 4px;
+}
+.theme-opt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.theme-opt:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.theme-opt[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ---------- ribbon ---------- */
+.ribbon {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 0 8px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   position: relative;
   z-index: 20;
+  min-width: 0;
 }
-.nav-tabs {
+.ribbon-tabs {
   display: flex;
   align-items: stretch;
-  height: 100%;
+  height: var(--ribbon-h);
   gap: 2px;
 }
-.nav-tab {
+.ribbon-tab {
   display: flex;
   align-items: center;
-  gap: 7px;
   padding: 0 12px;
-  color: var(--muted);
-  text-decoration: none;
-  font-weight: 550;
+  border: 0;
   border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 550;
+  cursor: pointer;
+  white-space: nowrap;
   transition: color 0.12s, border-color 0.12s;
 }
-.nav-tab:hover {
+.ribbon-tab:hover {
   color: var(--text);
 }
-.nav-tab.active {
+.ribbon-tab.active {
   color: var(--text);
   border-bottom-color: var(--accent);
 }
+
+/* ---------- All tools panel ---------- */
+.toolpanel {
+  width: var(--panel);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 10px 10px 16px;
+}
+.panel-head h2 {
+  flex: 1;
+  font-size: 17px;
+  font-weight: 650;
+}
+.panel-close {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.panel-close:hover {
+  background: var(--sunken);
+  color: var(--text);
+}
+.panel-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 8px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.panel-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.panel-item:hover {
+  background: var(--sunken);
+}
+.panel-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.panel-item .tool-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: none;
+}
+.panel-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.panel-item.not-ready {
+  color: var(--muted);
+}
+.panel-item.not-ready .tool-icon {
+  opacity: 0.55;
+}
+.panel-badge {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.view-more {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 6px 0 0 12px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 550;
+  cursor: pointer;
+}
+.view-more:hover {
+  color: var(--accent-hover);
+}
+
 .search {
   position: relative;
   display: flex;
@@ -1487,13 +1718,6 @@ main.wide .tool-content {
   padding: 12px;
   color: var(--muted);
 }
-.sidebar {
-  padding-top: 8px;
-}
-.nav-item svg {
-  color: var(--c, var(--muted));
-}
-
 /* ---------- home ---------- */
 .home-head h1 {
   font-size: 28px;
@@ -1647,16 +1871,13 @@ main.wide .tool-content {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
-@media (max-width: 720px) {
-  #app {
-    grid-template-rows: auto auto 1fr;
-  }
+@media (max-width: 860px) {
   .search {
     width: auto;
     flex: 1;
     margin-left: 4px;
   }
-  .topbar .btn span {
+  .ribbon .btn span {
     display: none;
   }
   .recent-table th:nth-child(2),
@@ -1951,4 +2172,37 @@ main.wide .tool-content {
 }
 .explorer-head strong {
   font-size: 15px;
+}
+
+/* ---------- tools that are listed but not wired up ---------- */
+.tool-card.not-ready {
+  position: relative;
+  align-items: stretch;
+  text-align: left;
+  font: inherit;
+  color: var(--muted);
+  cursor: pointer;
+}
+.tool-card.not-ready:hover {
+  transform: none;
+}
+.tool-card.not-ready .tool-icon {
+  opacity: 0.55;
+}
+.tool-card.not-ready strong {
+  color: var(--text);
+}
+.tool-card .panel-badge {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+}
+.tool-card.unavailable {
+  border-style: dashed;
+}
+
+/* The page canvas sits darker than the panels, the way a viewer does it. */
+.ed-stage,
+.ed-scroll {
+  background: var(--canvas);
 }

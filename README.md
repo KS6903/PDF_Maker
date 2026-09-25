@@ -104,8 +104,12 @@ menu requires a signed, packaged (MSIX) app, which this unsigned build isn't.
 ## Sending updates
 
 Installed copies (`setup.exe`) check GitHub Releases on startup and every few hours. They
-download new versions in the background and offer **Restart now**; otherwise the update is
-installed the next time the app closes. The portable `.exe` can't replace itself, so it shows
+download new versions in the background and offer **Restart now**; the installer then runs
+silently, with no setup wizard and no install-folder or all-users questions, and the app reopens on
+the new version. Choose **Later** and it installs just as quietly the next time the app
+closes. Either way it reuses the folder it's already installed in. The silent install only
+applies to updates; a first install from `setup.exe` still shows the normal wizard, so the
+install location can be chosen there. The portable `.exe` can't replace itself, so it shows
 a notice and opens the download page. The sidebar shows the current version and has a
 **Check for updates** link.
 

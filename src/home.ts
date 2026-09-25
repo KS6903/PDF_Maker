@@ -2,7 +2,8 @@ import { ArrowRight, FileText, Trash2, X, Clock, ShieldCheck, MousePointerClick 
 import { h, icon, button, withBusy, formatBytes, toast } from './lib/ui';
 import { openPdf } from './lib/pdf';
 import { listRecent, getRecentBytes, removeRecent, clearRecent } from './lib/recent';
-import type { AppContext, Tool, ToolGroup } from './tools/common';
+import { CATALOG, byLabel, entryHash, type CatalogEntry } from './lib/catalog';
+import type { AppContext, Tool } from './tools/common';
 
 type ShellIntegration = (action: 'add' | 'remove' | 'status') => Promise<{ ok: boolean; registered?: boolean; error?: string }>;
 let shellIntegration: ShellIntegration | null = null;
@@ -12,39 +13,40 @@ export function setShellIntegration(fn: ShellIntegration) {
 }
 
 /** Each tool gets its own accent so it's recognisable at a glance. */
-export const TOOL_COLORS: Record<string, string> = {
-  editor: '#e5484d',
-  'fill-forms': '#8e4ec6',
-  watermark: '#0d9488',
-  'page-numbers': '#d97706',
-  organize: '#16a34a',
-  merge: '#2563eb',
-  split: '#db2777',
-  compress: '#dc2626',
-  create: '#ea580c',
-  'images-to-pdf': '#0891b2',
-  'pdf-to-images': '#7c3aed',
-  'extract-text': '#1d4ed8',
-  protect: '#475569',
-  unlock: '#65a30d',
-  metadata: '#0f766e',
-};
+export const TOOL_COLORS: Record<string, string> = Object.fromEntries(CATALOG.filter((e) => e.tool).map((e) => [e.tool!, e.color]));
 
-const RECOMMENDED = ['editor', 'create', 'merge', 'compress', 'organize', 'extract-text'];
+const RECOMMENDED = ['Edit a PDF', 'Create a PDF', 'Combine files', 'Compress a PDF', 'Organize pages', 'Extract text'];
 
 export function toolIcon(t: Tool, size = 22) {
-  return h('span', { class: 'tool-icon', style: `--c:${TOOL_COLORS[t.id] ?? 'var(--accent)'}` }, icon(t.icon, size));
+  const entry = CATALOG.find((e) => e.tool === t.id);
+  return h('span', { class: 'tool-icon', style: `--c:${entry?.color ?? 'var(--accent)'}` }, icon(entry?.icon ?? t.icon, size));
 }
 
-function toolCard(t: Tool, large = false) {
-  return h(
-    'a',
-    { class: `tool-card${large ? ' large' : ''}`, href: `#/${t.id}`, 'data-search': `${t.title} ${t.blurb}`.toLowerCase() },
-    toolIcon(t, large ? 24 : 20),
-    h('strong', null, t.title),
-    h('span', { class: 'tool-blurb' }, t.blurb),
-    large ? h('span', { class: 'use-now' }, 'Use now', icon(ArrowRight, 14)) : null,
-  );
+function entryIcon(e: CatalogEntry, size = 22) {
+  return h('span', { class: 'tool-icon', style: `--c:${e.color}` }, icon(e.icon, size));
+}
+
+function blurbFor(e: CatalogEntry, tools: Tool[]) {
+  return e.note ?? tools.find((t) => t.id === e.tool)?.blurb ?? '';
+}
+
+function entryCard(e: CatalogEntry, tools: Tool[], large = false) {
+  const target = entryHash(e);
+  const body = [
+    entryIcon(e, large ? 24 : 20),
+    h('strong', null, e.label),
+    h('span', { class: 'tool-blurb' }, blurbFor(e, tools)),
+    large && target ? h('span', { class: 'use-now' }, 'Use now', icon(ArrowRight, 14)) : null,
+  ];
+  if (!target) {
+    return h(
+      'button',
+      { type: 'button', class: `tool-card not-ready ${e.status}`, title: e.note ?? '', onclick: () => toast(e.note ?? 'This tool is not available.', 'info') },
+      body,
+      h('span', { class: 'panel-badge' }, e.status === 'planned' ? 'Soon' : 'n/a'),
+    );
+  }
+  return h('a', { class: `tool-card${large ? ' large' : ''}`, href: target, 'data-search': e.label.toLowerCase() }, body);
 }
 
 export async function openInEditor(ctx: AppContext, file: File | { name: string; bytes: Uint8Array }) {
@@ -53,7 +55,6 @@ export async function openInEditor(ctx: AppContext, file: File | { name: string;
 }
 
 export function renderHome(ctx: AppContext, tools: Tool[]) {
-  const byId = new Map(tools.map((t) => [t.id, t]));
   const recentBody = h('div', { class: 'recent-body' });
 
   const el = h(
@@ -69,7 +70,13 @@ export function renderHome(ctx: AppContext, tools: Tool[]) {
       'section',
       null,
       h('div', { class: 'section-head' }, h('h2', null, 'Recommended tools'), h('a', { class: 'see-all', href: '#/tools' }, 'See all tools', icon(ArrowRight, 14))),
-      h('div', { class: 'rec-grid' }, RECOMMENDED.map((id) => byId.get(id)).filter((t): t is Tool => !!t).map((t) => toolCard(t, true))),
+      h(
+        'div',
+        { class: 'rec-grid' },
+        RECOMMENDED.map((label) => byLabel.get(label))
+          .filter((e): e is CatalogEntry => !!e)
+          .map((e) => entryCard(e, tools, true)),
+      ),
     ),
     h('section', { class: 'recent' }, recentBody),
     explorerPanel(),
@@ -159,12 +166,28 @@ export function renderHome(ctx: AppContext, tools: Tool[]) {
   return el;
 }
 
-export function renderAllTools(tools: Tool[], groups: ToolGroup[]) {
-  const empty = h('p', { class: 'muted', hidden: true }, 'No tools match your search.');
-  const sections = groups.map((g) =>
-    h('section', { class: 'tool-section' }, h('h2', null, g), h('div', { class: 'tool-grid' }, tools.filter((t) => t.group === g).map((t) => toolCard(t)))),
+export function renderAllTools(tools: Tool[]) {
+  const sections: [string, string, CatalogEntry[]][] = [
+    ['Tools', '', CATALOG.filter((e) => !!e.tool)],
+    ['Coming soon', 'Planned, and possible to do offline. Not built yet.', CATALOG.filter((e) => e.status === 'planned')],
+    ['Not supported', 'These need a service, a signing store or a prepress engine that this app deliberately does without.', CATALOG.filter((e) => e.status === 'unavailable')],
+  ];
+  return h(
+    'div',
+    { class: 'home' },
+    h('header', { class: 'home-head' }, h('h1', null, 'All tools')),
+    sections
+      .filter(([, , list]) => list.length)
+      .map(([title, blurb, list]) =>
+        h(
+          'section',
+          { class: 'tool-section' },
+          h('h2', null, title),
+          blurb ? h('p', { class: 'muted' }, blurb) : null,
+          h('div', { class: 'tool-grid' }, list.map((e) => entryCard(e, tools))),
+        ),
+      ),
   );
-  return h('div', { class: 'home' }, h('header', { class: 'home-head' }, h('h1', null, 'All tools')), sections, empty);
 }
 
 /** Add or remove the "Convert to PDF with PDF Maker" entries in File Explorer. */

@@ -1,8 +1,10 @@
 // Auto-updates from GitHub Releases (configured under "publish" in package.json).
 //
 // Installed copies (setup.exe) download updates in the background and install
-// them on restart. The portable .exe can't replace itself while running, so it
-// just tells the user a new version exists and opens the download page.
+// them silently on restart or on quit. The setup wizard is never shown again
+// after the first install. The portable .exe can't replace itself while
+// running, so it just tells the user a new version exists and opens the
+// download page.
 const { app, dialog, shell, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
 
@@ -76,10 +78,13 @@ function setupUpdater(windowGetter) {
       cancelId: 1,
       title: 'Update ready',
       message: `PDF Maker ${info.version} is ready to install.`,
-      detail: 'Restart now to update, or it will be installed the next time you close the app.',
+      detail: 'The app closes, updates itself and reopens. No setup wizard. Choose Later to update the next time you close it.',
     });
-    // quitAndInstall triggers the normal close flow, so unsaved edits still get a prompt.
-    if (response === 0) autoUpdater.quitAndInstall();
+    // (isSilent, isForceRunAfter): silent runs the installer with /S, so it
+    // skips the setup pages and reuses the existing install folder; force-run
+    // reopens the app afterwards. quitAndInstall still goes through the normal
+    // close flow, so unsaved edits are still prompted for.
+    if (response === 0) autoUpdater.quitAndInstall(true, true);
   });
 
   autoUpdater.on('error', (err) => {

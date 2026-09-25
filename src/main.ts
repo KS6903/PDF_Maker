@@ -1,9 +1,11 @@
 import './styles.css';
-import { Home, LayoutGrid, Search, FolderOpen } from 'lucide';
-import { h, icon, button } from './lib/ui';
+import { ChevronDown, ChevronUp, FolderOpen, House, Menu as MenuIcon, Monitor, Moon, PanelLeft, Plus, Printer, Search, Sun, X } from 'lucide';
+import { h, icon, button, toast } from './lib/ui';
+import { initTheme, getTheme, setTheme, type ThemeMode } from './lib/theme';
+import { CATALOG, RIBBON, byLabel, entryHash, type CatalogEntry } from './lib/catalog';
 import type { PdfSource } from './lib/pdf';
-import type { AppContext, Tool, ToolGroup } from './tools/common';
-import { renderHome, renderAllTools, toolIcon, openInEditor, TOOL_COLORS, setShellIntegration } from './home';
+import type { AppContext, Tool } from './tools/common';
+import { renderHome, renderAllTools, openInEditor, setShellIntegration } from './home';
 import { editorTool } from './tools/editor';
 import { formsTool } from './tools/forms';
 import { watermarkTool } from './tools/watermark';
@@ -17,6 +19,8 @@ import { imagesToPdfTool, pdfToImagesTool } from './tools/images';
 import { extractTool } from './tools/extract';
 import { protectTool, unlockTool } from './tools/protect';
 import { metadataTool } from './tools/metadata';
+
+initTheme();
 
 const TOOLS: Tool[] = [
   editorTool,
@@ -35,7 +39,6 @@ const TOOLS: Tool[] = [
   unlockTool,
   metadataTool,
 ];
-const GROUPS: ToolGroup[] = ['Edit & sign', 'Organize', 'Convert', 'Secure & info'];
 
 let incoming: PdfSource | undefined;
 let incomingFiles: File[] | undefined;
@@ -60,7 +63,7 @@ const ctx: AppContext = {
   },
 };
 
-/* ---------- top navbar ---------- */
+/* ---------- shared file picker ---------- */
 const openInput = h('input', {
   type: 'file',
   accept: 'application/pdf,.pdf',
@@ -72,6 +75,87 @@ const openInput = h('input', {
   },
 }) as HTMLInputElement;
 
+/* ---------- app bar: menu, home, document tabs, create ---------- */
+const menuPanel = h('div', { class: 'menu-panel', hidden: true, role: 'menu' });
+const menuBtn = h(
+  'button',
+  {
+    type: 'button',
+    class: 'appbar-btn menu-btn',
+    'aria-haspopup': 'menu',
+    'aria-expanded': 'false',
+    onclick: (e: MouseEvent) => {
+      e.stopPropagation();
+      toggleMenu(menuPanel.hidden === true);
+    },
+  },
+  icon(MenuIcon, 18),
+  h('span', null, 'Menu'),
+);
+
+function toggleMenu(open: boolean) {
+  menuPanel.hidden = !open;
+  menuBtn.setAttribute('aria-expanded', String(open));
+}
+document.addEventListener('click', () => toggleMenu(false));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') toggleMenu(false);
+});
+menuPanel.addEventListener('click', (e) => e.stopPropagation());
+
+const versionLine = h('div', { class: 'menu-note' }, 'Running in a browser');
+const updateAction = h('button', { type: 'button', class: 'menu-item', hidden: true }, 'Check for updates');
+
+/** Three-way theme picker. The choice is remembered across restarts. */
+const themeButtons = ([
+  ['system', 'System', Monitor],
+  ['light', 'Light', Sun],
+  ['dark', 'Dark', Moon],
+] as [ThemeMode, string, Parameters<typeof icon>[0]][]).map(([value, label, glyph]) =>
+  h(
+    'button',
+    {
+      type: 'button',
+      class: 'theme-opt',
+      'data-theme-opt': value,
+      'aria-pressed': String(getTheme() === value),
+      onclick: () => {
+        setTheme(value);
+        paintTheme();
+      },
+    },
+    icon(glyph, 15),
+    h('span', null, label),
+  ),
+);
+function paintTheme() {
+  for (const b of themeButtons) b.setAttribute('aria-pressed', String(getTheme() === b.dataset.themeOpt));
+}
+
+menuPanel.append(
+  h('button', { type: 'button', class: 'menu-item', onclick: () => openInput.click() }, icon(FolderOpen, 16), h('span', null, 'Open a PDF')),
+  h('div', { class: 'menu-sep' }),
+  h('div', { class: 'menu-label' }, 'Appearance'),
+  h('div', { class: 'theme-row' }, themeButtons),
+  h('div', { class: 'menu-sep' }),
+  versionLine,
+  updateAction,
+);
+
+const docTabs = h('div', { class: 'doc-tabs', role: 'tablist', 'aria-label': 'Open documents' });
+
+const appbar = h(
+  'header',
+  { class: 'appbar' },
+  h('div', { class: 'menu-wrap' }, menuBtn, menuPanel),
+  h('a', { class: 'appbar-btn icon-only', href: '#/', title: 'Home', 'aria-label': 'Home' }, icon(House, 18)),
+  docTabs,
+  h('a', { class: 'tab-add', href: '#/create', title: 'Create a PDF' }, icon(Plus, 16), h('span', null, 'Create')),
+  h('span', { class: 'spacer' }),
+  openInput,
+);
+
+/* ---------- ribbon: tool tabs and the find box ---------- */
 const searchInput = h('input', {
   type: 'search',
   class: 'search-input',
@@ -84,27 +168,28 @@ let searchIndex = 0;
 
 function matches(q: string) {
   const s = q.trim().toLowerCase();
-  if (!s) return TOOLS;
-  return TOOLS.filter((t) => `${t.title} ${t.blurb} ${t.group}`.toLowerCase().includes(s));
+  const live = CATALOG.filter((e) => !!e.tool);
+  if (!s) return live;
+  return live.filter((e) => e.label.toLowerCase().includes(s) || (TOOLS.find((t) => t.id === e.tool)?.blurb ?? '').toLowerCase().includes(s));
 }
 function renderSearch() {
   const list = matches(searchInput.value).slice(0, 8);
   searchIndex = Math.min(searchIndex, Math.max(0, list.length - 1));
   searchResults.replaceChildren(
     ...(list.length
-      ? list.map((t, i) =>
+      ? list.map((e, i) =>
           h(
             'a',
             {
               class: `search-item${i === searchIndex ? ' active' : ''}`,
-              href: `#/${t.id}`,
+              href: entryHash(e) ?? '#/',
               role: 'option',
               'aria-selected': String(i === searchIndex),
-              onmousedown: (e: MouseEvent) => e.preventDefault(), // keep focus until the click navigates
+              onmousedown: (ev: MouseEvent) => ev.preventDefault(), // keep focus until the click navigates
               onclick: () => closeSearch(),
             },
-            toolIcon(t, 16),
-            h('span', null, h('strong', null, t.title), h('small', null, t.blurb)),
+            entryIcon(e, 16),
+            h('span', null, h('strong', null, e.label), h('small', null, TOOLS.find((t) => t.id === e.tool)?.blurb ?? '')),
           ),
         )
       : [h('div', { class: 'search-empty' }, 'No matching tools')]),
@@ -126,7 +211,8 @@ searchInput.addEventListener('keydown', (e) => {
     searchIndex = (searchIndex + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % Math.max(1, list.length);
     renderSearch();
   } else if (e.key === 'Enter' && list[searchIndex]) {
-    location.hash = `#/${list[searchIndex].id}`;
+    const target = entryHash(list[searchIndex]);
+    if (target) location.hash = target;
     closeSearch();
   } else if (e.key === 'Escape') {
     closeSearch();
@@ -139,64 +225,152 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-const tabs = [
-  { hash: '', label: 'Home', icon: Home },
-  { hash: 'tools', label: 'All tools', icon: LayoutGrid },
-].map((t) => h('a', { class: 'nav-tab', href: `#/${t.hash}`, 'data-tab': t.hash }, icon(t.icon, 16), h('span', null, t.label)));
-
-const topbar = h(
-  'header',
-  { class: 'topbar' },
-  h('a', { class: 'brand', href: '#/' }, h('img', { class: 'brand-mark', src: './icon.svg', alt: '', width: 28, height: 28 }), h('span', null, 'PDF Maker')),
-  h('nav', { class: 'nav-tabs', 'aria-label': 'Main' }, tabs),
-  h('div', { class: 'search' }, icon(Search, 16), searchInput, h('kbd', null, 'Ctrl K'), searchResults),
-  h('span', { class: 'spacer' }),
-  button('Open file', () => openInput.click(), { icon: FolderOpen, kind: 'primary' }),
-  openInput,
-);
-
-/* ---------- sidebar (tool list) ---------- */
-const main = h('main', { id: 'main', tabindex: -1 });
-const updateLine = h('div', { class: 'update-line', hidden: true });
-const nav = h(
-  'nav',
-  { class: 'sidebar', 'aria-label': 'Tools' },
-  GROUPS.map((g) =>
-    h(
-      'div',
-      { class: 'nav-group' },
-      h('div', { class: 'nav-heading' }, g),
-      TOOLS.filter((t) => t.group === g).map((t) =>
-        h('a', { class: 'nav-item', href: `#/${t.id}`, 'data-id': t.id, style: `--c:${TOOL_COLORS[t.id]}` }, icon(t.icon, 17), h('span', null, t.title)),
-      ),
-    ),
+let ribbonTab = 'tools';
+const ribbonTabs = RIBBON.map((t) =>
+  h(
+    'button',
+    {
+      type: 'button',
+      class: 'ribbon-tab',
+      'data-ribbon': t.id,
+      onclick: () => {
+        ribbonTab = t.id;
+        paintRibbon();
+        setPanelOpen(true);
+      },
+    },
+    t.label,
   ),
-  h('div', { class: 'nav-foot' }, h('p', null, 'Everything runs on your device. Files are never uploaded.'), updateLine),
 );
-document.getElementById('app')!.append(topbar, nav, main);
+function paintRibbon() {
+  for (const b of ribbonTabs) b.classList.toggle('active', b.dataset.ribbon === ribbonTab);
+  renderPanel();
+}
+
+const panelToggle = h(
+  'button',
+  { type: 'button', class: 'appbar-btn icon-only', title: 'Show or hide the tools panel', 'aria-label': 'Show or hide the tools panel', onclick: () => setPanelOpen(panel.hidden === true) },
+  icon(PanelLeft, 18),
+);
+
+const ribbon = h(
+  'nav',
+  { class: 'ribbon', 'aria-label': 'Tool groups' },
+  panelToggle,
+  h('div', { class: 'ribbon-tabs' }, ribbonTabs),
+  h('span', { class: 'spacer' }),
+  h('div', { class: 'search' }, icon(Search, 16), searchInput, h('kbd', null, 'Ctrl K'), searchResults),
+  button(null, () => window.print(), { icon: Printer, kind: 'ghost', title: 'Print' }),
+  button('Open file', () => openInput.click(), { icon: FolderOpen, kind: 'primary' }),
+);
+
+/* ---------- left panel: All tools ---------- */
+const panelList = h('div', { class: 'panel-list' });
+let showMore = false;
+const moreBtn = h('button', { type: 'button', class: 'view-more', onclick: () => ((showMore = !showMore), renderPanel()) });
+
+const panel = h(
+  'aside',
+  { class: 'toolpanel', 'aria-label': 'All tools' },
+  h(
+    'div',
+    { class: 'panel-head' },
+    h('h2', null, 'All tools'),
+    h('button', { type: 'button', class: 'panel-close', title: 'Close', 'aria-label': 'Close the tools panel', onclick: () => setPanelOpen(false) }, icon(X, 16)),
+  ),
+  panelList,
+);
+
+function setPanelOpen(open: boolean) {
+  panel.hidden = !open;
+  panelToggle.setAttribute('aria-pressed', String(open));
+}
+
+function entryIcon(e: CatalogEntry, size = 20) {
+  return h('span', { class: 'tool-icon', style: `--c:${e.color}` }, icon(e.icon, size));
+}
+
+function entryRow(e: CatalogEntry) {
+  const target = entryHash(e);
+  const current = location.hash.replace(/^#\/?/, '');
+  if (!target) {
+    return h(
+      'button',
+      {
+        type: 'button',
+        class: `panel-item not-ready ${e.status}`,
+        title: e.note ?? '',
+        onclick: () => toast(e.note ?? 'This tool is not available.', 'info'),
+      },
+      entryIcon(e),
+      h('span', { class: 'panel-label' }, e.label),
+      h('span', { class: 'panel-badge' }, e.status === 'planned' ? 'Soon' : 'n/a'),
+    );
+  }
+  return h(
+    'a',
+    { class: `panel-item${target === `#/${current}` ? ' active' : ''}`, href: target },
+    entryIcon(e),
+    h('span', { class: 'panel-label' }, e.label),
+  );
+}
+
+function renderPanel() {
+  const tab = RIBBON.find((t) => t.id === ribbonTab);
+  if (tab && tab.entries.length) {
+    panelList.replaceChildren(...tab.entries.map((label) => byLabel.get(label)).filter((e): e is CatalogEntry => !!e).map(entryRow));
+    return;
+  }
+  const shown = showMore ? CATALOG : CATALOG.filter((e) => !e.more);
+  moreBtn.replaceChildren(h('span', null, showMore ? 'View less' : 'View more'), icon(showMore ? ChevronUp : ChevronDown, 14));
+  panelList.replaceChildren(...shown.map(entryRow), moreBtn);
+}
+
+/* ---------- assemble ---------- */
+const main = h('main', { id: 'main', tabindex: -1 });
+const workarea = h('div', { class: 'workarea' }, panel, main);
+document.getElementById('app')!.append(appbar, ribbon, workarea);
+setPanelOpen(true);
+paintRibbon();
 
 function route() {
   if (typeof cleanup === 'function') cleanup();
   cleanup = undefined;
+  toggleMenu(false);
   const id = location.hash.replace(/^#\/?/, '');
   const tool = TOOLS.find((t) => t.id === id);
-  nav.querySelectorAll('.nav-item').forEach((a) => a.classList.toggle('active', (a as HTMLElement).dataset.id === tool?.id));
-  tabs.forEach((a) => a.classList.toggle('active', !tool && a.dataset.tab === (id === 'tools' ? 'tools' : '')));
+  // Guard on `tool`, otherwise this matches the first entry that has no tool at all.
+  const entry = tool ? CATALOG.find((e) => e.tool === tool.id) : undefined;
+  const label = entry?.label ?? tool?.title;
+  renderPanel();
   main.replaceChildren();
   main.className = tool?.wide ? 'wide' : '';
-  document.title = tool ? `${tool.title} · PDF Maker` : id === 'tools' ? 'All tools · PDF Maker' : 'PDF Maker';
+  document.title = label ? `${label} · PDF Maker` : id === 'tools' ? 'All tools · PDF Maker' : 'PDF Maker';
+  renderDocTabs(label ?? (id === 'tools' ? 'All tools' : 'Home'));
   if (!tool) {
     incoming = undefined;
-    main.append(id === 'tools' ? renderAllTools(TOOLS, GROUPS) : renderHome(ctx, TOOLS));
+    main.append(id === 'tools' ? renderAllTools(TOOLS) : renderHome(ctx, TOOLS));
   } else {
     const body = h('div', { class: 'tool-content' });
     if (!tool.wide) {
-      main.append(h('header', { class: 'tool-head' }, toolIcon(tool), h('div', null, h('h1', null, tool.title), h('p', { class: 'muted' }, tool.blurb))));
+      main.append(
+        h(
+          'header',
+          { class: 'tool-head' },
+          entry ? entryIcon(entry, 24) : null,
+          h('div', null, h('h1', null, label ?? tool.title), h('p', { class: 'muted' }, tool.blurb)),
+        ),
+      );
     }
     main.append(body);
     cleanup = tool.mount(body, ctx);
   }
   main.scrollTop = 0;
+}
+
+/** The app bar tab strip. The editor manages its own document tabs inside its view. */
+function renderDocTabs(label: string) {
+  docTabs.replaceChildren(h('span', { class: 'doc-tab active' }, h('span', { class: 'doc-tab-name' }, label)));
 }
 
 /* ---------- desktop app: PDFs opened via "Open with PDF Maker" ---------- */
@@ -246,8 +420,6 @@ if (desktop) {
   void desktop.getLaunchFiles().then(handleLaunch);
   desktop.onOpenFiles(handleLaunch);
   void desktop.getAppInfo().then((info) => {
-    const label = h('span');
-    const check = h('button', { type: 'button', class: 'link-btn', onclick: () => void desktop.checkForUpdates() }, 'Check for updates');
     const show = (s: UpdateStatus) => {
       const extra =
         s.state === 'checking' ? ' · checking…'
@@ -255,14 +427,13 @@ if (desktop) {
         : s.state === 'ready' ? ` · ${s.version} ready, restart to install`
         : s.state === 'available' ? ` · ${s.version} available`
         : '';
-      label.textContent = `Version ${info.version}${extra}`;
-      check.hidden = s.state === 'checking' || s.state === 'downloading';
-      if (s.state === 'ready') check.textContent = 'Restart to update';
+      versionLine.textContent = `Version ${info.version}${extra}`;
+      updateAction.hidden = s.state === 'checking' || s.state === 'downloading';
+      updateAction.textContent = s.state === 'ready' ? 'Restart to update' : 'Check for updates';
     };
     show(info.status);
     desktop.onUpdateStatus(show);
-    updateLine.append(label, check);
-    updateLine.hidden = false;
+    updateAction.addEventListener('click', () => void desktop.checkForUpdates());
   });
 }
 
