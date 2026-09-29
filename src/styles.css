@@ -858,6 +858,42 @@ select[multiple] {
 .ed-props input[type='number'] {
   width: 64px;
 }
+
+/* Thickness slider for the check and cross marks. */
+.ed-thick {
+  width: 96px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex: none;
+}
+.ed-thick::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--sunken);
+  border: 1px solid var(--border);
+}
+.ed-thick::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1.5px solid var(--accent);
+  box-shadow: var(--shadow);
+}
+.ed-thick:hover::-webkit-slider-thumb {
+  background: var(--accent-soft);
+}
+.ed-thick:active::-webkit-slider-thumb {
+  background: var(--accent);
+}
 .ed-props select {
   width: auto;
 }
@@ -1135,20 +1171,48 @@ main.wide .tool-content {
 }
 .sel-box {
   position: absolute;
-  outline: 1.5px solid var(--focus);
+  outline: calc(1.5px / var(--z, 1)) solid var(--focus);
   outline-offset: 0;
   cursor: move;
   border-radius: 2px;
 }
+/*
+ * The page layer is CSS-scaled by the zoom, so the selection chrome divides by
+ * it (--z, set in layoutPage) to stay the same size on screen at any zoom.
+ */
 .sel-handle {
+  --hs: calc(10px / var(--z, 1));
   position: absolute;
-  right: -5px;
-  bottom: -5px;
-  width: 10px;
-  height: 10px;
+  width: var(--hs);
+  height: var(--hs);
   background: #fff;
-  border: 1.5px solid var(--focus);
-  border-radius: 2px;
+  border: calc(1.5px / var(--z, 1)) solid var(--focus);
+  border-radius: calc(2px / var(--z, 1));
+}
+/* A generous invisible margin, so the handles stay easy to grab. */
+.sel-handle::after {
+  content: '';
+  position: absolute;
+  inset: calc(-6px / var(--z, 1));
+}
+.sel-handle.nw {
+  left: calc(var(--hs) / -2);
+  top: calc(var(--hs) / -2);
+  cursor: nwse-resize;
+}
+.sel-handle.ne {
+  right: calc(var(--hs) / -2);
+  top: calc(var(--hs) / -2);
+  cursor: nesw-resize;
+}
+.sel-handle.sw {
+  left: calc(var(--hs) / -2);
+  bottom: calc(var(--hs) / -2);
+  cursor: nesw-resize;
+}
+.sel-handle.se {
+  right: calc(var(--hs) / -2);
+  bottom: calc(var(--hs) / -2);
   cursor: nwse-resize;
 }
 .text-hover {

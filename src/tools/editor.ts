@@ -76,6 +76,10 @@ interface InkAnn extends Base {
   color: string;
   width: number;
   arrow?: boolean;
+  /** Set on the stamped marks, so Size and Thickness can be changed after the fact. */
+  shape?: 'check' | 'cross';
+  /** Nominal size of a stamped mark, kept in step with its paths. */
+  size?: number;
   /** Checkbox form field this check mark ticks. */
   field?: string;
 }
@@ -108,9 +112,28 @@ const TOOLS: { id: ToolId; label: string; icon: Parameters<typeof icon>[0]; key?
 interface Style {
   color: string;
   size: number;
+  /** Stroke weight of the stamped marks, set apart from their size. */
+  weight: number;
   family: FontFamily;
   bold: boolean;
   italic: boolean;
+}
+
+/** How thick a mark's stroke may get, as a share of its size. */
+const MIN_WEIGHT = 0.04;
+const MAX_WEIGHT = 0.3;
+
+const clampWeight = (w: number) => Math.min(MAX_WEIGHT, Math.max(MIN_WEIGHT, w || MIN_WEIGHT));
+
+/** The strokes of a check or cross mark, centred on (cx, cy) at the given size. */
+function shapePaths(shape: 'check' | 'cross', cx: number, cy: number, size: number): [number, number][][] {
+  const s = size;
+  return shape === 'check'
+    ? [[[cx - s * 0.5, cy], [cx - s * 0.15, cy + s * 0.35], [cx + s * 0.5, cy - s * 0.4]]]
+    : [
+        [[cx - s * 0.4, cy - s * 0.4], [cx + s * 0.4, cy + s * 0.4]],
+        [[cx - s * 0.4, cy + s * 0.4], [cx + s * 0.4, cy - s * 0.4]],
+      ];
 }
 
 const DEFAULT_STYLE: Record<string, Partial<Style>> = {
@@ -122,8 +145,8 @@ const DEFAULT_STYLE: Record<string, Partial<Style>> = {
   box: { color: '#d9342b', size: 2 },
   line: { color: '#d9342b', size: 2 },
   arrow: { color: '#d9342b', size: 2 },
-  check: { color: '#1a7f37', size: 18 },
-  cross: { color: '#d9342b', size: 18 },
+  check: { color: '#1a7f37', size: 18, weight: 0.125 },
+  cross: { color: '#d9342b', size: 18, weight: 0.125 },
 };
 
 /** pdf.js builds and owns the selectable text spans; we only hold on to it. */
@@ -168,7 +191,7 @@ export const editorTool: Tool = {
     let undoStack: Ann[][] = [];
     let redoStack: Ann[][] = [];
     const styles: Record<string, Style> = {};
-    const styleFor = (t: string): Style => (styles[t] ??= { color: '#111111', size: 14, family: 'helvetica', bold: false, italic: false, ...DEFAULT_STYLE[t] });
+    const styleFor = (t: string): Style => (styles[t] ??= { color: '#111111', size: 14, weight: 0.125, family: 'helvetica', bold: false, italic: false, ...DEFAULT_STYLE[t] });
 
     const results = resultsPanel(ctx);
     const scroller = h('div', { class: 'ed-scroll' });
@@ -210,11 +233,24 @@ export const editorTool: Tool = {
     const boldBtn = h('button', { type: 'button', class: 'tool-btn', title: 'Bold', 'aria-label': 'Bold', 'aria-pressed': 'false' }, icon(Bold, 16));
     const italicBtn = h('button', { type: 'button', class: 'tool-btn', title: 'Italic', 'aria-label': 'Italic', 'aria-pressed': 'false' }, icon(Italic, 16));
     const sizeLabel = h('span', { class: 'muted small ed-size-label' }, 'Size');
+    // Stroke weight of a check or cross, kept apart from its size so a big mark
+    // can still be drawn fine and a small one bold.
+    const thickInput = h('input', {
+      type: 'range',
+      class: 'ed-thick',
+      min: String(MIN_WEIGHT),
+      max: String(MAX_WEIGHT),
+      step: '0.005',
+      value: '0.125',
+      title: 'Thickness',
+      'aria-label': 'Thickness',
+    }) as HTMLInputElement;
+    const thickLabel = h('span', { class: 'muted small ed-size-label' }, 'Thickness');
     const textProps = h('span', { class: 'ed-textprops' }, familySel, boldBtn, italicBtn);
     const deleteBtn = button(null, () => deleteSelected(), { icon: Trash2, title: 'Delete selected (Del)', kind: 'ghost', disabled: true });
     const allPagesBtn = button('All pages', () => copyToAllPages(), { icon: Copy, kind: 'ghost', title: 'Add the selected item to every page (e.g. initials)' });
     allPagesBtn.hidden = true;
-    const props = h('div', { class: 'ed-props' }, colorInput, sizeLabel, sizeInput, textProps, allPagesBtn, deleteBtn);
+    const props = h('div', { class: 'ed-props' }, colorInput, sizeLabel, sizeInput, thickLabel, thickInput, textProps, allPagesBtn, deleteBtn);
 
     const suggestBtn = h('button', {
       type: 'button',
@@ -640,16 +676,17 @@ export const editorTool: Tool = {
       finishEditing();
       const st = styleFor('text');
       if (sg.kind === 'check') {
-        const sz = Math.max(6, Math.min(sg.w, sg.h));
-        const cx = sg.x + sg.w / 2;
-        const cy = sg.y + sg.h / 2;
+        const sz = Math.max(6, Math.min(sg.w, sg.h)) * 0.75;
+        const mark = styleFor('check');
         anns.push({
           id: nextId++,
           page: p.index,
           type: 'ink',
-          paths: [[[cx - sz * 0.35, cy], [cx - sz * 0.08, cy + sz * 0.28], [cx + sz * 0.38, cy - sz * 0.32]]],
+          shape: 'check',
+          size: sz,
+          paths: shapePaths('check', sg.x + sg.w / 2, sg.y + sg.h / 2, sz),
           color: '#111111',
-          width: Math.max(1, sz / 9),
+          width: Math.max(0.5, sz * mark.weight),
           field: sg.field,
         });
         commit();
@@ -689,6 +726,9 @@ export const editorTool: Tool = {
       p.layer.style.width = `${p.width}px`;
       p.layer.style.height = `${p.height}px`;
       p.layer.style.transform = `scale(${zoom})`;
+      // The layer is scaled, so the selection chrome divides by this to keep a
+      // steady size on screen whatever the zoom.
+      p.layer.style.setProperty('--z', String(zoom));
       syncText(p);
     }
 
@@ -784,7 +824,7 @@ export const editorTool: Tool = {
 
     /* ---------- tools & properties ---------- */
     const HINTS: Record<ToolId, string> = {
-      select: 'Drag over the page to select text, then Ctrl+C to copy (Ctrl+A selects it all). Click an item to select it; drag to move, drag the corner to resize. Double-click text to edit.',
+      select: 'Drag over the page to select text, then Ctrl+C to copy (Ctrl+A selects it all). Click an item to select it; drag to move, drag any corner to resize (Shift stretches freely). Double-click text to edit.',
       text: 'Click anywhere on a page to type, or click a blue box to fill it in.',
       edittext: 'Click on existing text to replace it. The original is covered with white-out and you can retype it.',
       draw: 'Drag to draw freehand.',
@@ -793,8 +833,8 @@ export const editorTool: Tool = {
       box: 'Drag to draw a rectangle.',
       line: 'Drag to draw a line.',
       arrow: 'Drag to draw an arrow.',
-      check: 'Click to place a check mark.',
-      cross: 'Click to place a cross mark.',
+      check: 'Click to place a check mark. Set its size and thickness first, or resize it afterwards from any corner.',
+      cross: 'Click to place a cross mark. Set its size and thickness first, or resize it afterwards from any corner.',
     };
 
     function setTool(t: ToolId) {
@@ -813,7 +853,7 @@ export const editorTool: Tool = {
     function propTarget(): { ann?: Ann; style: Style; kind: string } {
       const ann = anns.find((a) => a.id === selectedId);
       if (ann) {
-        const kind = ann.type === 'text' ? 'text' : ann.type === 'rect' ? ann.mode : ann.type === 'ink' ? 'draw' : 'image';
+        const kind = ann.type === 'text' ? 'text' : ann.type === 'rect' ? ann.mode : ann.type === 'ink' ? (ann.shape ?? 'draw') : 'image';
         return { ann, style: styleFor(kind), kind };
       }
       return { style: styleFor(tool), kind: tool };
@@ -822,12 +862,21 @@ export const editorTool: Tool = {
     function syncProps() {
       const { ann, style, kind } = propTarget();
       const isText = kind === 'text' || kind === 'edittext';
+      const isMark = kind === 'check' || kind === 'cross';
       colorInput.value = ann && 'color' in ann ? ann.color : style.color;
-      const sizeVal = ann?.type === 'text' ? ann.size : ann && 'width' in ann ? ann.width : style.size;
+      const sizeVal =
+        ann?.type === 'text' ? ann.size
+        : isMark ? (ann?.type === 'ink' ? (ann.size ?? markSize(ann)) : style.size)
+        : ann && 'width' in ann ? ann.width
+        : style.size;
       sizeInput.value = String(Math.round(sizeVal * 10) / 10);
-      sizeLabel.textContent = isText ? 'Font size' : kind === 'check' || kind === 'cross' ? 'Size' : 'Thickness';
+      sizeLabel.textContent = isText ? 'Font size' : isMark ? 'Size' : 'Thickness';
       const showSize = !['highlight', 'whiteout', 'image', 'select'].includes(kind) || (ann?.type === 'rect' && ann.mode === 'box');
       sizeInput.hidden = sizeLabel.hidden = !showSize;
+      // Only the stamped marks separate weight from size; everything else has
+      // just the one number.
+      thickInput.hidden = thickLabel.hidden = !isMark;
+      thickInput.value = String(ann?.type === 'ink' ? clampWeight(ann.width / Math.max(1, ann.size ?? markSize(ann))) : style.weight);
       colorInput.hidden = kind === 'image' || (kind === 'select' && !ann);
       textProps.hidden = !isText;
       const t = ann?.type === 'text' ? ann : null;
@@ -858,7 +907,16 @@ export const editorTool: Tool = {
         const v = Math.max(0.5, +sizeInput.value || 1);
         s.size = v;
         if (a?.type === 'text') a.size = v;
+        else if (a?.type === 'ink' && a.shape) resizeMark(a, v);
         else if (a && 'width' in a) a.width = v;
+      }),
+    );
+    // Live while dragging, so the weight can be judged against the page.
+    thickInput.addEventListener('input', () =>
+      applyProp((s, a) => {
+        const v = clampWeight(+thickInput.value);
+        s.weight = v;
+        if (a?.type === 'ink' && a.shape) a.width = Math.max(0.5, (a.size ?? markSize(a)) * v);
       }),
     );
     familySel.addEventListener('change', () =>
@@ -1017,19 +1075,31 @@ export const editorTool: Tool = {
       });
     }
 
+    /** The four corners, as [handle, the corner it pivots around]. */
+    const HANDLES = [
+      ['nw', 'se'],
+      ['ne', 'sw'],
+      ['sw', 'ne'],
+      ['se', 'nw'],
+    ] as const;
+    type Corner = (typeof HANDLES)[number][0];
+
     function selectionBox(a: Ann) {
       const b = bbox(a);
       const pad = 3;
       const box = h('div', { class: 'sel-box', 'data-id': String(a.id) });
       Object.assign(box.style, { left: `${b.x - pad}px`, top: `${b.y - pad}px`, width: `${b.w + pad * 2}px`, height: `${b.h + pad * 2}px` });
-      if (a.type !== 'ink') box.append(h('div', { class: 'sel-handle', 'data-handle': 'se', title: 'Resize' }));
+      // Every kind of item resizes, drawings and marks included, from any corner.
+      for (const [corner] of HANDLES) {
+        box.append(h('div', { class: `sel-handle ${corner}`, 'data-handle': corner, title: 'Drag to resize (Shift to stretch freely)' }));
+      }
       return box;
     }
 
     /* ---------- pointer interaction ---------- */
     type Drag =
       | { kind: 'move'; ann: Ann; start: [number, number]; orig: Ann; moved: boolean }
-      | { kind: 'resize'; ann: Ann; start: [number, number]; orig: Ann }
+      | { kind: 'resize'; ann: Ann; start: [number, number]; orig: Ann; corner: Corner; box: { x: number; y: number; w: number; h: number } }
       | { kind: 'rect'; ann: RectAnn; start: [number, number] }
       | { kind: 'ink'; ann: InkAnn; start: [number, number] }
       | { kind: 'line'; ann: InkAnn; start: [number, number] };
@@ -1061,8 +1131,9 @@ export const editorTool: Tool = {
 
         if (tool === 'select') {
           finishEditing();
-          if (target.closest('.sel-handle') && hitAnn) {
-            drag = { kind: 'resize', ann: hitAnn, start: [x, y], orig: { ...hitAnn } as Ann };
+          const handle = target.closest<HTMLElement>('.sel-handle');
+          if (handle && hitAnn) {
+            drag = { kind: 'resize', ann: hitAnn, start: [x, y], orig: cloneAnn(hitAnn), corner: (handle.dataset.handle ?? 'se') as Corner, box: bbox(hitAnn) };
           } else if (hitAnn) {
             select_(hitAnn.id);
             drag = { kind: 'move', ann: hitAnn, start: [x, y], orig: cloneAnn(hitAnn), moved: false };
@@ -1090,15 +1161,18 @@ export const editorTool: Tool = {
             return;
           case 'check':
           case 'cross': {
-            const s = st.size;
-            const paths: [number, number][][] =
-              tool === 'check'
-                ? [[[x - s * 0.5, y], [x - s * 0.15, y + s * 0.35], [x + s * 0.5, y - s * 0.4]]]
-                : [
-                    [[x - s * 0.4, y - s * 0.4], [x + s * 0.4, y + s * 0.4]],
-                    [[x - s * 0.4, y + s * 0.4], [x + s * 0.4, y - s * 0.4]],
-                  ];
-            anns.push({ id: nextId++, page: p.index, type: 'ink', paths, color: st.color, width: Math.max(1.5, s / 8) });
+            const a: InkAnn = {
+              id: nextId++,
+              page: p.index,
+              type: 'ink',
+              shape: tool,
+              size: st.size,
+              paths: shapePaths(tool, x, y, st.size),
+              color: st.color,
+              width: Math.max(0.5, st.size * st.weight),
+            };
+            anns.push(a);
+            select_(a.id, false);
             commit();
             renderLayer(p);
             return;
@@ -1149,7 +1223,7 @@ export const editorTool: Tool = {
             Object.assign(drag.ann, translated(drag.orig, dx, dy));
             break;
           case 'resize':
-            resize(drag.ann, drag.orig, dx, dy, e.shiftKey);
+            resize(drag.ann, drag.orig, drag.box, drag.corner, dx, dy, e.shiftKey);
             break;
           case 'rect':
             Object.assign(drag.ann, { x: Math.min(sx, x), y: Math.min(sy, y), w: Math.abs(dx), h: Math.abs(dy) });
@@ -1208,6 +1282,37 @@ export const editorTool: Tool = {
       layoutPage(p);
     }
 
+    /** Extent of a set of strokes, as [x, y, width, height]. */
+    function span(paths: [number, number][][]) {
+      const pts = paths.flat();
+      const xs = pts.map((q) => q[0]);
+      const ys = pts.map((q) => q[1]);
+      const [x0, y0] = [Math.min(...xs), Math.min(...ys)];
+      return [x0, y0, Math.max(...xs) - x0, Math.max(...ys) - y0] as const;
+    }
+
+    /** A mark's size, for marks saved before the size was stored alongside. */
+    function markSize(a: InkAnn) {
+      const [, , w, hgt] = span(a.paths);
+      // A cross spans 0.8 of its size; a check spans the full width.
+      return Math.max(1, Math.max(w, hgt) / (a.shape === 'cross' ? 0.8 : 1));
+    }
+
+    /** Redraw a placed check or cross at a new size, without letting it wander. */
+    function resizeMark(a: InkAnn, size: number) {
+      if (!a.shape) return;
+      const weight = clampWeight(a.width / Math.max(1, a.size ?? markSize(a)));
+      const [ox, oy, ow, oh] = span(a.paths);
+      const next = shapePaths(a.shape, 0, 0, size);
+      const [nx, ny, nw, nh] = span(next);
+      // Line the new strokes up on the old centre, whatever the shape's offsets.
+      const dx = ox + ow / 2 - (nx + nw / 2);
+      const dy = oy + oh / 2 - (ny + nh / 2);
+      a.paths = next.map((path) => path.map(([px, py]) => [px + dx, py + dy] as [number, number]));
+      a.size = size;
+      a.width = Math.max(0.5, size * weight);
+    }
+
     function cloneAnn(a: Ann): Ann {
       return a.type === 'ink' ? { ...a, paths: a.paths.map((p) => p.map((q) => [...q] as [number, number])) } : { ...a };
     }
@@ -1217,18 +1322,59 @@ export const editorTool: Tool = {
       return { x: orig.x + dx, y: orig.y + dy };
     }
 
-    function resize(a: Ann, orig: Ann, dx: number, dy: number, free: boolean) {
-      if (a.type === 'text' && orig.type === 'text') {
-        const b = bbox(orig);
-        a.size = Math.max(4, orig.size * ((b.w + dx) / Math.max(1, b.w)));
-        syncProps();
-      } else if ((a.type === 'image' && orig.type === 'image') || (a.type === 'rect' && orig.type === 'rect')) {
-        let w = Math.max(4, orig.w + dx);
-        let hgt = Math.max(4, orig.h + dy);
-        if (a.type === 'image' && !free) hgt = w * (orig.h / orig.w); // keep aspect (Shift = free)
+    /**
+     * Drag a corner to resize. The opposite corner stays put, so the item grows
+     * away from where it is pinned rather than jumping. Boxes stretch freely in
+     * both directions; text, images, drawings and marks keep their proportions
+     * unless Shift is held.
+     */
+    function resize(a: Ann, orig: Ann, box: { x: number; y: number; w: number; h: number }, corner: Corner, dx: number, dy: number, free: boolean) {
+      const west = corner === 'nw' || corner === 'sw';
+      const north = corner === 'nw' || corner === 'ne';
+      // The corner being dragged moves; its opposite is the anchor.
+      const anchorX = west ? box.x + box.w : box.x;
+      const anchorY = north ? box.y + box.h : box.y;
+      const MIN = 6;
+      let w = Math.max(MIN, west ? box.w - dx : box.w + dx);
+      let hgt = Math.max(MIN, north ? box.h - dy : box.h + dy);
+
+      if (a.type === 'rect' && orig.type === 'rect') {
+        // Highlights and white-out need to stretch to whatever they cover.
         a.w = w;
         a.h = hgt;
-        void w;
+        a.x = west ? anchorX - w : anchorX;
+        a.y = north ? anchorY - hgt : anchorY;
+        return;
+      }
+
+      if (a.type === 'image' && orig.type === 'image') {
+        if (!free) hgt = w * (box.h / Math.max(1, box.w)); // keep aspect (Shift = free)
+        a.w = w;
+        a.h = hgt;
+        a.x = west ? anchorX - w : anchorX;
+        a.y = north ? anchorY - hgt : anchorY;
+        return;
+      }
+
+      if (a.type === 'text' && orig.type === 'text') {
+        // Text has one size, so the width of the drag drives it.
+        const k = Math.max(0.05, w / Math.max(1, box.w));
+        a.size = Math.max(4, orig.size * k);
+        a.x = west ? anchorX - box.w * k : anchorX;
+        a.y = north ? anchorY - box.h * k : anchorY;
+        syncProps();
+        return;
+      }
+
+      if (a.type === 'ink' && orig.type === 'ink') {
+        const kx = free ? w / Math.max(1, box.w) : Math.max(w / Math.max(1, box.w), hgt / Math.max(1, box.h));
+        const ky = free ? hgt / Math.max(1, box.h) : kx;
+        a.paths = orig.paths.map((path) => path.map(([px, py]) => [anchorX + (px - anchorX) * kx, anchorY + (py - anchorY) * ky] as [number, number]));
+        // The stroke grows with the mark, so a big check isn't a hairline.
+        const k = Math.min(kx, ky);
+        a.width = Math.max(0.5, orig.width * k);
+        if (orig.size) a.size = Math.max(1, orig.size * k);
+        syncProps();
       }
     }
 
