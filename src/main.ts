@@ -145,6 +145,38 @@ const versionLine = h(
 );
 const updateAction = h('button', { type: 'button', class: 'menu-item update-action', hidden: true }, icon(RefreshCw, 16), h('span', null, 'Check for updates'));
 
+/*
+ * Automatic updates, on by default. Off means nothing is fetched or installed
+ * behind your back: the app still finds updates when you ask, and the ribbon
+ * button downloads one on request.
+ */
+const autoSwitch = h('button', {
+  type: 'button',
+  class: 'switch',
+  role: 'switch',
+  'aria-checked': 'true',
+  'aria-label': 'Update automatically',
+}, h('span', { class: 'switch-track' }, h('span', { class: 'switch-knob' })));
+const autoRow = h(
+  'div',
+  { class: 'menu-switch', hidden: true },
+  h('div', { class: 'switch-text' }, h('span', null, 'Update automatically'), h('small', { class: 'muted' }, 'Download and install new versions on their own')),
+  autoSwitch,
+);
+
+/*
+ * The one update control that is visible without opening the menu. It only
+ * appears when there is something to act on, and says exactly what clicking
+ * does.
+ */
+const updatePillLabel = h('span', null, 'Restart to update');
+const updatePill = h(
+  'button',
+  { type: 'button', class: 'update-pill', hidden: true },
+  icon(CircleArrowUp, 16),
+  updatePillLabel,
+);
+
 /** Three-way theme picker. The choice is remembered across restarts. */
 const themeButtons = ([
   ['system', 'System', Monitor],
@@ -177,6 +209,7 @@ menuPanel.append(
   h('div', { class: 'menu-label' }, 'Appearance'),
   h('div', { class: 'theme-row' }, themeButtons),
   h('div', { class: 'menu-sep' }),
+  autoRow,
   browserNote,
   versionLine,
   updateAction,
@@ -300,6 +333,7 @@ const ribbon = h(
   h('div', { class: 'ribbon-tabs' }, ribbonTabs),
   h('span', { class: 'spacer' }),
   h('div', { class: 'search' }, icon(Search, 16), searchInput, h('kbd', null, 'Ctrl K'), searchResults),
+  updatePill,
   button(null, () => window.print(), { icon: Printer, kind: 'ghost', title: 'Print' }),
   button('Open file', () => openInput.click(), { icon: FolderOpen, kind: 'primary' }),
 );
@@ -422,6 +456,8 @@ interface UpdateStatus {
   state: 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'ready' | 'error' | 'unsupported';
   version?: string;
   percent?: number;
+  /** Whether updates download and install without being asked. */
+  auto?: boolean;
 }
 interface LaunchPayload {
   mode: 'edit' | 'merge' | 'compress' | 'images' | 'create' | null;
@@ -431,8 +467,11 @@ interface DesktopBridge {
   getLaunchFiles(): Promise<LaunchPayload | null>;
   onOpenFiles(cb: (p: LaunchPayload | null) => void): void;
   shellIntegration(action: 'add' | 'remove' | 'status'): Promise<{ ok: boolean; registered?: boolean; error?: string }>;
-  getAppInfo(): Promise<{ version: string; portable: boolean; packaged: boolean; status: UpdateStatus }>;
+  getAppInfo(): Promise<{ version: string; portable: boolean; packaged: boolean; releasesUrl: string; status: UpdateStatus }>;
   checkForUpdates(): Promise<UpdateStatus>;
+  setAutoUpdate(on: boolean): Promise<{ auto: boolean }>;
+  downloadUpdate(): Promise<UpdateStatus>;
+  installUpdate(): Promise<boolean>;
   onUpdateStatus(cb: (s: UpdateStatus) => void): void;
   onConfirmClose(cb: (id: number) => void): void;
   respondToClose(id: number, close: boolean): void;
@@ -462,6 +501,8 @@ if (desktop) {
   void desktop.getLaunchFiles().then(handleLaunch);
   desktop.onOpenFiles(handleLaunch);
   void desktop.getAppInfo().then((info) => {
+    let auto = info.status.auto ?? true;
+    let state: UpdateStatus['state'] = info.status.state;
     /** Badge text, look and icon for each update state. Idle shows nothing. */
     const badges: Partial<Record<UpdateStatus['state'], [tone: string, label: (s: UpdateStatus) => string, glyph: Parameters<typeof icon>[0]]>> = {
       checking: ['checking', () => 'Checking…', LoaderCircle],
@@ -473,6 +514,7 @@ if (desktop) {
       unsupported: ['muted', () => 'Dev build', CircleAlert],
     };
     const show = (s: UpdateStatus) => {
+      state = s.state;
       browserNote.hidden = true;
       versionLine.hidden = false;
       updateAction.hidden = false;
@@ -497,13 +539,55 @@ if (desktop) {
       updateAction.disabled = busy;
       updateAction.querySelector('span')!.textContent =
         s.state === 'ready' ? 'Restart to update'
+        : s.state === 'available' && !info.portable ? 'Download the update'
         : s.state === 'downloading' ? 'Downloading update…'
         : s.state === 'checking' ? 'Checking…'
         : 'Check for updates';
+
+      // Only an installed copy can update itself in place.
+      autoRow.hidden = !info.packaged || info.portable;
+      auto = s.auto ?? auto;
+      autoSwitch.setAttribute('aria-checked', String(auto));
+
+      // The ribbon button appears only when there is something to do.
+      const pill =
+        s.state === 'ready' ? ['ready', `Restart to update${s.version ? ` to ${s.version}` : ''}`, 'Installs the update and reopens PDF Maker']
+        : s.state === 'downloading' ? ['busy', s.percent ? `Updating ${s.percent}%` : 'Downloading…', 'Downloading the update']
+        : s.state === 'available' ? ['news', `Update to ${s.version ?? 'the new version'}`, info.portable ? 'Opens the download page' : 'Downloads the update now']
+        : null;
+      updatePill.hidden = !pill;
+      if (pill) {
+        const [tone, label, tip] = pill;
+        updatePill.className = `update-pill ${tone}`;
+        updatePillLabel.textContent = label;
+        updatePill.title = tip;
+        updatePill.disabled = tone === 'busy';
+      }
     };
     show(info.status);
     desktop.onUpdateStatus(show);
-    updateAction.addEventListener('click', () => void desktop.checkForUpdates());
+    updateAction.addEventListener('click', () => {
+      if (state === 'ready') void desktop.installUpdate();
+      else if (state === 'available' && !info.portable) void desktop.downloadUpdate();
+      else void desktop.checkForUpdates();
+    });
+
+    autoSwitch.addEventListener('click', () => {
+      auto = !auto;
+      autoSwitch.setAttribute('aria-checked', String(auto));
+      void desktop.setAutoUpdate(auto);
+    });
+
+    updatePill.addEventListener('click', () => {
+      if (state === 'ready') {
+        // Closes, installs silently and reopens. Unsaved edits are still asked about.
+        void desktop.installUpdate();
+      } else if (info.portable) {
+        window.open(info.releasesUrl, '_blank');
+      } else {
+        void desktop.downloadUpdate();
+      }
+    });
   });
 
   // Closing the window asks with the app's own dialog, not a native one.

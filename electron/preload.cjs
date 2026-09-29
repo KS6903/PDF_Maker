@@ -10,8 +10,14 @@ contextBridge.exposeInMainWorld('pdfMaker', {
   shellIntegration: (action) => ipcRenderer.invoke('shell-integration', action),
   /** Version, portable/installed, and current update status. */
   getAppInfo: () => ipcRenderer.invoke('app-info'),
-  /** Check GitHub for a newer version now (shows a dialog with the result). */
+  /** Check GitHub for a newer version now; the result shows next to the version. */
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  /** Turn automatic downloading and installing of updates on or off. */
+  setAutoUpdate: (on) => ipcRenderer.invoke('set-auto-update', !!on),
+  /** Download a waiting update now (used when automatic updates are off). */
+  downloadUpdate: () => ipcRenderer.invoke('download-update'),
+  /** Restart into the downloaded update. Installs silently, then reopens. */
+  installUpdate: () => ipcRenderer.invoke('install-update'),
   /** Called as an update is found, downloaded and ready to install. */
   onUpdateStatus: (cb) => ipcRenderer.on('update-status', (_e, status) => cb(status)),
   /**
