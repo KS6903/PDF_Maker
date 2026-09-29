@@ -125,6 +125,9 @@ const DEFAULT_STYLE: Record<string, Partial<Style>> = {
   cross: { color: '#d9342b', size: 18 },
 };
 
+/** pdf.js builds and owns the selectable text spans; we only hold on to it. */
+type TextLayerInstance = InstanceType<typeof pdfjs.TextLayer>;
+
 interface PageView {
   index: number;
   proxy: PDFPageProxy;
@@ -133,6 +136,9 @@ interface PageView {
   el: HTMLElement;
   canvas: HTMLCanvasElement;
   layer: HTMLElement;
+  /** Invisible copy of the page's own text, so it can be selected and copied. */
+  text: HTMLElement;
+  textLayer: TextLayerInstance | null;
   renderedZoom: number;
   rendering: boolean;
   textItems?: { x: number; y: number; w: number; size: number; str: string; family: FontFamily }[];
@@ -492,8 +498,11 @@ export const editorTool: Tool = {
           const vp = proxy.getViewport({ scale: 1 });
           const canvas = h('canvas');
           const layer = h('div', { class: 'ed-layer' });
-          const el = h('div', { class: 'ed-page', 'data-index': String(i) }, canvas, layer, h('span', { class: 'ed-pagenum' }, `${i + 1} / ${d.js.numPages}`));
-          const pv: PageView = { index: i, proxy, width: vp.width, height: vp.height, el, canvas, layer, renderedZoom: 0, rendering: false };
+          const text = h('div', { class: 'ed-text' });
+          // Text sits under the annotation layer, which steps out of the way
+          // (pointer-events: none) whenever the Select tool is active.
+          const el = h('div', { class: 'ed-page', 'data-index': String(i) }, canvas, text, layer, h('span', { class: 'ed-pagenum' }, `${i + 1} / ${d.js.numPages}`));
+          const pv: PageView = { index: i, proxy, width: vp.width, height: vp.height, el, canvas, layer, text, textLayer: null, renderedZoom: 0, rendering: false };
           d.pages.push(pv);
           d.pagesEl.append(el);
           d.observer.observe(el);
@@ -534,6 +543,7 @@ export const editorTool: Tool = {
       if (!d) return;
       if (i === activeDoc) captureActive();
       if (d.dirty && !confirm(`"${d.src.name}" has unsaved edits. Close it anyway?`)) return;
+      for (const p of d.pages) p.textLayer?.cancel();
       await d.js?.loadingTask.destroy();
       d.observer?.disconnect();
       d.pagesEl.remove();
@@ -638,6 +648,41 @@ export const editorTool: Tool = {
       p.layer.style.width = `${p.width}px`;
       p.layer.style.height = `${p.height}px`;
       p.layer.style.transform = `scale(${zoom})`;
+      syncText(p);
+    }
+
+    /**
+     * Keep the text layer at the current zoom. Always reads `zoom` rather than
+     * a captured value: the canvas may still be rasterised at an older scale,
+     * but the text has to line up with the page box as it is on screen now.
+     */
+    function syncText(p: PageView) {
+      // pdf.js sizes the container off this and scales the spans with it.
+      p.text.style.setProperty('--total-scale-factor', String(zoom));
+      p.textLayer?.update({ viewport: p.proxy.getViewport({ scale: zoom }) });
+    }
+
+    /**
+     * The page's own text, laid out invisibly over the canvas so it can be
+     * selected and copied. Built once per page, then re-laid-out on zoom.
+     */
+    async function drawText(p: PageView) {
+      if (p.textLayer) return syncText(p);
+      p.text.style.setProperty('--total-scale-factor', String(zoom));
+      try {
+        const layer = new pdfjs.TextLayer({
+          textContentSource: await p.proxy.getTextContent(),
+          container: p.text,
+          viewport: p.proxy.getViewport({ scale: zoom }),
+        });
+        p.textLayer = layer;
+        await layer.render();
+        // The zoom may have moved on while the text was being built.
+        syncText(p);
+      } catch (err) {
+        // A cancelled layer (page closed mid-render) is not worth reporting.
+        if ((err as { name?: string })?.name !== 'AbortException') console.warn('Text layer failed', err);
+      }
     }
 
     async function draw(p: PageView | undefined) {
@@ -650,6 +695,7 @@ export const editorTool: Tool = {
         p.canvas.replaceWith(c);
         p.canvas = c;
         p.renderedZoom = z;
+        await drawText(p);
       } finally {
         p.rendering = false;
       }
@@ -687,7 +733,7 @@ export const editorTool: Tool = {
 
     /* ---------- tools & properties ---------- */
     const HINTS: Record<ToolId, string> = {
-      select: 'Click a blue box to fill it in. Click an item to select it; drag to move, drag the corner to resize. Double-click text to edit.',
+      select: 'Drag over the page to select text, then Ctrl+C to copy (Ctrl+A selects it all). Click an item to select it; drag to move, drag the corner to resize. Double-click text to edit.',
       text: 'Click anywhere on a page to type, or click a blue box to fill it in.',
       edittext: 'Click on existing text to replace it. The original is covered with white-out and you can retype it.',
       draw: 'Drag to draw freehand.',
@@ -944,6 +990,14 @@ export const editorTool: Tool = {
         return [(e.clientX - r.left) / zoom, (e.clientY - r.top) / zoom];
       };
       const hover = h('div', { class: 'text-hover', hidden: true });
+
+      // With Select active the annotation layer lets pointer events through to
+      // the text, so clicking blank page area has to clear the selection here.
+      p.text.addEventListener('pointerdown', (e) => {
+        if (tool !== 'select' || e.button !== 0) return;
+        finishEditing();
+        select_(null);
+      });
 
       p.layer.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return;
@@ -1406,6 +1460,24 @@ export const editorTool: Tool = {
     }
 
     /* ---------- keyboard ---------- */
+    /** Ctrl+A: select every page's text, not the rest of the app around it. */
+    async function selectAllText() {
+      const d = docs[activeDoc];
+      if (!d) return;
+      // Pages that were never scrolled into view have no text spans yet.
+      const missing = d.pages.filter((p) => !p.textLayer);
+      if (missing.length) {
+        await withBusy('Reading text…', async () => {
+          for (const p of missing) await drawText(p);
+        });
+      }
+      const range = document.createRange();
+      range.selectNodeContents(d.pagesEl);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    }
+
     const onKey = (e: KeyboardEvent) => {
       if (workspace.hidden || !root.isConnected) return;
       const t = e.target as HTMLElement;
@@ -1429,6 +1501,10 @@ export const editorTool: Tool = {
       } else if (mod && e.key.toLowerCase() === 's') {
         e.preventDefault();
         void save();
+      } else if (mod && e.key.toLowerCase() === 'a') {
+        // Select the whole document's text rather than the surrounding app.
+        e.preventDefault();
+        void selectAllText();
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId !== null) {
         e.preventDefault();
         deleteSelected();

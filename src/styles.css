@@ -951,6 +951,77 @@ select[multiple] {
   transform-origin: 0 0;
   touch-action: none;
 }
+
+/*
+ * pdf.js text layer: the page's own text, transparent and positioned over the
+ * canvas so it can be selected and copied. pdf.js sizes this element and the
+ * spans from --total-scale-factor, which layoutPage keeps equal to the zoom.
+ */
+.ed-text {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.ed-text span,
+.ed-text br {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+.ed-text > :not(.markedContent),
+.ed-text .markedContent span:not(.markedContent) {
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.ed-text .markedContent {
+  display: contents;
+}
+.ed-text ::selection {
+  background: color-mix(in srgb, var(--focus) 40%, transparent);
+  color: transparent;
+}
+.ed-text br::selection {
+  background: transparent;
+}
+/* The "3 / 12" corner label is chrome, so keep it out of a copied selection. */
+.ed-pagenum {
+  user-select: none;
+}
+
+/*
+ * Select is the resting state, so it hands pointer events to the text layer
+ * underneath and keeps them only on the items that can actually be grabbed.
+ */
+.ed-workspace[data-tool='select'] .ed-layer {
+  pointer-events: none;
+}
+.ed-workspace[data-tool='select'] .ed-layer .ann:not(.ann-hit),
+.ed-workspace[data-tool='select'] .ed-layer .suggest,
+.ed-workspace[data-tool='select'] .ed-layer .sel-box,
+.ed-workspace[data-tool='select'] .ed-layer .autofill {
+  pointer-events: auto;
+}
+.ed-workspace[data-tool='select'] .ed-layer .ann-hit {
+  pointer-events: stroke;
+}
 .ed-workspace[data-tool='text'] .ed-layer {
   cursor: text;
 }
