@@ -14,4 +14,16 @@ contextBridge.exposeInMainWorld('pdfMaker', {
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   /** Called as an update is found, downloaded and ready to install. */
   onUpdateStatus: (cb) => ipcRenderer.on('update-status', (_e, status) => cb(status)),
+  /**
+   * Called before the window closes, so the app can ask about unsaved edits.
+   * The ack tells the shell the request was picked up and the answer is worth
+   * waiting for, however long the dialog stays open.
+   */
+  onConfirmClose: (cb) =>
+    ipcRenderer.on('confirm-close', (_e, id) => {
+      ipcRenderer.send('confirm-close-ack', id);
+      cb(id);
+    }),
+  /** Answer a 'confirm-close' request: true closes the window, false keeps it. */
+  respondToClose: (id, close) => ipcRenderer.send('confirm-close-result', id, !!close),
 });

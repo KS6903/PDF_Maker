@@ -29,13 +29,14 @@ import {
 import { degrees, rgb, BlendMode, LineCapStyle, PDFTextField, PDFCheckBox, type PDFPage } from '@cantoo/pdf-lib';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import type { TextItem } from 'pdfjs-dist/types/src/display/api';
-import { h, button, icon, withBusy, toast, select, numberInput } from '../lib/ui';
+import { h, button, icon, withBusy, toast, select, numberInput, confirmDiscard } from '../lib/ui';
+import { setUnsavedGuard, clearUnsavedGuard, type UnsavedGuard } from '../lib/unsaved';
 import { loadLib, loadJs, openPdf, renderPage, pdfOutput, baseName, hexToRgb01, visualFrame, pdfjs, type PdfSource } from '../lib/pdf';
 import { FontCache, FONT_OPTIONS, CSS_FONT, baselineEm, safeText, type FontFamily } from '../lib/fonts';
 import { signatureDialog } from './signature';
 import { fromWidgets, fromText, fromCanvas, mergeSuggestions, overlap, type Suggestion } from '../lib/detect';
 import { rememberEntry, suggestEntries, forgetEntry, forgetAll } from '../lib/autofill';
-import { loadSession, saveSession, getSessionFile, clearSession } from '../lib/session';
+import { loadSession, saveSession, getSessionFile, clearSession, type SessionTab, type SessionInput } from '../lib/session';
 import { pdfInput, resultsPanel, type Tool } from './common';
 
 /* ---------- annotation model (visual page coordinates, points, origin top-left) ---------- */
@@ -273,9 +274,14 @@ export const editorTool: Tool = {
     const workspace = h('div', { class: 'ed-workspace', hidden: true }, tabsEl, bar, hint, h('div', { class: 'ed-stage' }, scroller, viewPill), h('div', { class: 'ed-results' }, results.el));
 
     const launchFiles = ctx.takeIncomingFiles();
+    // Recent, Open file, a dropped PDF or an Explorer right-click all name a
+    // document. Asking for one file should show that file, not last time's
+    // tabs, so the saved ones are carried along unopened instead.
+    const wantsOneFile = !!launchFiles?.length || ctx.hasIncoming();
     const input = pdfInput(ctx, (s) => void openDoc(s));
     void (async () => {
-      await restoreSession();
+      if (wantsOneFile) await carrySession();
+      else await restoreSession();
       for (const file of launchFiles ?? []) {
         const opened = await withBusy('Opening PDF…', () => openPdf(file));
         if (opened) await openDoc(opened);
@@ -415,6 +421,19 @@ export const editorTool: Tool = {
     const storedFiles = new Set<string>();
     let sessionTimer = 0;
     let restoring = false;
+    /** Saved tabs this window deliberately did not open, kept so they survive. */
+    let carriedTabs: SessionTab[] = [];
+
+    /**
+     * Remember the stored tabs without opening any of them, so writing the
+     * session later adds to them rather than replacing them.
+     */
+    async function carrySession() {
+      const saved = await loadSession();
+      carriedTabs = saved?.tabs ?? [];
+      // Their bytes are already on disk; never rewrite them.
+      for (const t of carriedTabs) storedFiles.add(t.fileId);
+    }
     /**
      * @param immediate write now instead of after the usual short delay
      * @param allowClear wipe the stored session when nothing is open; only the
@@ -424,12 +443,15 @@ export const editorTool: Tool = {
       clearTimeout(sessionTimer);
       if (restoring) return Promise.resolve();
       const write = () => {
-        const live = docs.map((d, i) =>
+        const live: SessionInput[] = docs.map((d, i) =>
           i === activeDoc
             ? { fileId: d.fileId, name: d.src.name, bytes: d.src.bytes, anns: anns as unknown[], nextId, zoom, scrollTop: scroller.scrollTop, dirty }
             : { fileId: d.fileId, name: d.src.name, bytes: d.src.bytes, anns: d.anns as unknown[], nextId: d.nextId, zoom: d.zoom, scrollTop: d.scrollTop, dirty: d.dirty },
         );
-        if (live.length) return saveSession(live, activeDoc, storedFiles);
+        // A carried tab the user has since opened would otherwise come back twice.
+        const open = new Set(live.map((t) => t.name));
+        const carried = carriedTabs.filter((t) => !open.has(t.name));
+        if (live.length || carried.length) return saveSession([...live, ...carried], activeDoc, storedFiles);
         return allowClear ? clearSession() : Promise.resolve();
       };
       if (immediate) return write();
@@ -467,6 +489,15 @@ export const editorTool: Tool = {
 
     async function openDoc(s: PdfSource | null, restore?: { fileId: string; anns: Ann[]; nextId: number; zoom: number; scrollTop: number; dirty: boolean }) {
       if (!s) return;
+      // Opening a document that is already open switches to it, with its
+      // unsaved edits intact, rather than stacking an identical tab.
+      if (!restore) {
+        const already = docs.findIndex((d) => d.src.name === s.name && d.src.bytes.byteLength === s.bytes.byteLength);
+        if (already >= 0) {
+          switchDoc(already);
+          return;
+        }
+      }
       captureActive();
       const d: DocState = {
         src: s,
@@ -542,7 +573,17 @@ export const editorTool: Tool = {
       const d = docs[i];
       if (!d) return;
       if (i === activeDoc) captureActive();
-      if (d.dirty && !confirm(`"${d.src.name}" has unsaved edits. Close it anyway?`)) return;
+      if (
+        d.dirty &&
+        !(await confirmDiscard({
+          title: 'Unsaved changes',
+          message: `“${d.src.name}” has edits that haven’t been saved to a PDF yet.`,
+          detail: 'Keep it open and use Save to write them out first.',
+          confirm: 'Discard and close',
+          cancel: 'Keep open',
+        }))
+      )
+        return;
       for (const p of d.pages) p.textLayer?.cancel();
       await d.js?.loadingTask.destroy();
       d.observer?.disconnect();
@@ -659,8 +700,17 @@ export const editorTool: Tool = {
     function syncText(p: PageView) {
       // pdf.js sizes the container off this and scales the spans with it.
       p.text.style.setProperty('--total-scale-factor', String(zoom));
+      // update() re-measures every span against the new scale, which is what
+      // keeps the selection boxes on the glyphs as the zoom changes.
       p.textLayer?.update({ viewport: p.proxy.getViewport({ scale: zoom }) });
     }
+
+    const endOfContent = (p: PageView) => p.text.querySelector('.end-of-content');
+    // A drag that ends outside the page still has to finish cleanly.
+    const onPointerUp = () => {
+      for (const d of docs) for (const p of d.pages) endOfContent(p)?.classList.remove('active');
+    };
+    document.addEventListener('pointerup', onPointerUp);
 
     /**
      * The page's own text, laid out invisibly over the canvas so it can be
@@ -677,6 +727,7 @@ export const editorTool: Tool = {
         });
         p.textLayer = layer;
         await layer.render();
+        p.text.append(h('div', { class: 'end-of-content' }));
         // The zoom may have moved on while the text was being built.
         syncText(p);
       } catch (err) {
@@ -995,6 +1046,7 @@ export const editorTool: Tool = {
       // the text, so clicking blank page area has to clear the selection here.
       p.text.addEventListener('pointerdown', (e) => {
         if (tool !== 'select' || e.button !== 0) return;
+        endOfContent(p)?.classList.add('active');
         finishEditing();
         select_(null);
       });
@@ -1520,9 +1572,17 @@ export const editorTool: Tool = {
     const onResize = () => pages.length && pages.filter(isVisible).forEach((p) => void draw(p));
     window.addEventListener('resize', onResize);
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (dirty || docs.some((d) => d.dirty)) e.preventDefault();
+      if (unsaved().length) e.preventDefault();
     };
     window.addEventListener('beforeunload', onBeforeUnload);
+    /** Names of the open documents whose edits are not in a PDF yet. */
+    function unsaved() {
+      return docs.filter((d, i) => (i === activeDoc ? dirty : d.dirty)).map((d) => d.src.name);
+    }
+    // The desktop shell asks this before it closes the window, so the question
+    // is the app's own dialog rather than a native message box.
+    const guard: UnsavedGuard = { names: unsaved, flush: () => rememberSession(true) };
+    setUnsavedGuard(guard);
 
     /* ---------- save ---------- */
     async function save() {
@@ -1573,8 +1633,10 @@ export const editorTool: Tool = {
 
     return () => {
       document.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('resize', onResize);
       window.removeEventListener('beforeunload', onBeforeUnload);
+      clearUnsavedGuard(guard);
       void rememberSession(true);
       for (const d of docs) {
         d.observer?.disconnect();

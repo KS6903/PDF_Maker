@@ -1,6 +1,27 @@
 import './styles.css';
-import { ChevronDown, ChevronUp, FolderOpen, House, Menu as MenuIcon, Monitor, Moon, PanelLeft, Plus, Printer, Search, Sun, X } from 'lucide';
-import { h, icon, button, toast } from './lib/ui';
+import {
+  ChevronDown,
+  ChevronUp,
+  CircleAlert,
+  CircleArrowUp,
+  CircleCheck,
+  Download,
+  FolderOpen,
+  House,
+  LoaderCircle,
+  Menu as MenuIcon,
+  Monitor,
+  Moon,
+  PanelLeft,
+  Plus,
+  Printer,
+  RefreshCw,
+  Search,
+  Sun,
+  X,
+} from 'lucide';
+import { h, icon, button, toast, confirmDiscard } from './lib/ui';
+import { unsavedNames, flushUnsaved } from './lib/unsaved';
 import { initTheme, getTheme, setTheme, type ThemeMode } from './lib/theme';
 import { CATALOG, RIBBON, byLabel, entryHash, type CatalogEntry } from './lib/catalog';
 import type { PdfSource } from './lib/pdf';
@@ -56,6 +77,9 @@ const ctx: AppContext = {
     incoming = undefined;
     return f;
   },
+  hasIncoming() {
+    return incoming !== undefined;
+  },
   takeIncomingFiles() {
     const f = incomingFiles;
     incomingFiles = undefined;
@@ -103,8 +127,23 @@ document.addEventListener('keydown', (e) => {
 });
 menuPanel.addEventListener('click', (e) => e.stopPropagation());
 
-const versionLine = h('div', { class: 'menu-note' }, 'Running in a browser');
-const updateAction = h('button', { type: 'button', class: 'menu-item', hidden: true }, 'Check for updates');
+/*
+ * Update state lives here, next to the version, instead of interrupting with a
+ * dialog. Only the two updates that need a decision - a portable download and
+ * a restart-to-install - still open one.
+ */
+const browserNote = h('div', { class: 'menu-note' }, 'Running in a browser');
+const versionLabel = h('span', { class: 'version-name' }, 'PDF Maker');
+const updateBadge = h('span', { class: 'update-badge', hidden: true });
+const updateFill = h('i', { class: 'update-fill' });
+const updateBar = h('div', { class: 'update-bar', hidden: true }, updateFill);
+const versionLine = h(
+  'div',
+  { class: 'menu-version', hidden: true },
+  h('div', { class: 'version-row' }, versionLabel, updateBadge),
+  updateBar,
+);
+const updateAction = h('button', { type: 'button', class: 'menu-item update-action', hidden: true }, icon(RefreshCw, 16), h('span', null, 'Check for updates'));
 
 /** Three-way theme picker. The choice is remembered across restarts. */
 const themeButtons = ([
@@ -138,6 +177,7 @@ menuPanel.append(
   h('div', { class: 'menu-label' }, 'Appearance'),
   h('div', { class: 'theme-row' }, themeButtons),
   h('div', { class: 'menu-sep' }),
+  browserNote,
   versionLine,
   updateAction,
 );
@@ -379,7 +419,7 @@ interface DesktopFile {
   data: Uint8Array;
 }
 interface UpdateStatus {
-  state: 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'ready' | 'error';
+  state: 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'ready' | 'error' | 'unsupported';
   version?: string;
   percent?: number;
 }
@@ -394,6 +434,8 @@ interface DesktopBridge {
   getAppInfo(): Promise<{ version: string; portable: boolean; packaged: boolean; status: UpdateStatus }>;
   checkForUpdates(): Promise<UpdateStatus>;
   onUpdateStatus(cb: (s: UpdateStatus) => void): void;
+  onConfirmClose(cb: (id: number) => void): void;
+  respondToClose(id: number, close: boolean): void;
 }
 const desktop = (window as unknown as { pdfMaker?: DesktopBridge }).pdfMaker;
 const IMAGE_RE = /\.(jpe?g|png|webp|bmp|gif|tiff?)$/i;
@@ -420,20 +462,68 @@ if (desktop) {
   void desktop.getLaunchFiles().then(handleLaunch);
   desktop.onOpenFiles(handleLaunch);
   void desktop.getAppInfo().then((info) => {
+    /** Badge text, look and icon for each update state. Idle shows nothing. */
+    const badges: Partial<Record<UpdateStatus['state'], [tone: string, label: (s: UpdateStatus) => string, glyph: Parameters<typeof icon>[0]]>> = {
+      checking: ['checking', () => 'Checking…', LoaderCircle],
+      current: ['ok', () => 'Up to date', CircleCheck],
+      available: ['news', (s) => `${s.version ?? 'Update'} available`, CircleArrowUp],
+      downloading: ['news', (s) => (s.percent ? `Downloading ${s.percent}%` : 'Downloading…'), Download],
+      ready: ['news', (s) => `${s.version ?? 'Update'} ready`, CircleArrowUp],
+      error: ['warn', () => 'Check failed', CircleAlert],
+      unsupported: ['muted', () => 'Dev build', CircleAlert],
+    };
     const show = (s: UpdateStatus) => {
-      const extra =
-        s.state === 'checking' ? ' · checking…'
-        : s.state === 'downloading' ? ` · downloading ${s.version ?? 'update'}${s.percent ? ` (${s.percent}%)` : ''}`
-        : s.state === 'ready' ? ` · ${s.version} ready, restart to install`
-        : s.state === 'available' ? ` · ${s.version} available`
-        : '';
-      versionLine.textContent = `Version ${info.version}${extra}`;
-      updateAction.hidden = s.state === 'checking' || s.state === 'downloading';
-      updateAction.textContent = s.state === 'ready' ? 'Restart to update' : 'Check for updates';
+      browserNote.hidden = true;
+      versionLine.hidden = false;
+      updateAction.hidden = false;
+      versionLabel.textContent = `PDF Maker ${info.version}`;
+
+      const badge = badges[s.state];
+      updateBadge.hidden = !badge;
+      if (badge) {
+        const [tone, label, glyph] = badge;
+        const text = label(s);
+        updateBadge.className = `update-badge ${tone}`;
+        updateBadge.replaceChildren(icon(glyph, 13), h('span', null, text));
+        updateBadge.title =
+          s.state === 'error' ? 'Couldn’t reach the update server. Check your connection and try again.'
+          : s.state === 'unsupported' ? 'Updates only run in the installed app.'
+          : text;
+      }
+
+      const busy = s.state === 'checking' || s.state === 'downloading';
+      updateBar.hidden = s.state !== 'downloading';
+      updateFill.style.width = `${s.percent ?? 0}%`;
+      updateAction.disabled = busy;
+      updateAction.querySelector('span')!.textContent =
+        s.state === 'ready' ? 'Restart to update'
+        : s.state === 'downloading' ? 'Downloading update…'
+        : s.state === 'checking' ? 'Checking…'
+        : 'Check for updates';
     };
     show(info.status);
     desktop.onUpdateStatus(show);
     updateAction.addEventListener('click', () => void desktop.checkForUpdates());
+  });
+
+  // Closing the window asks with the app's own dialog, not a native one.
+  desktop.onConfirmClose(async (id) => {
+    const names = unsavedNames();
+    if (!names.length) return desktop.respondToClose(id, true);
+    toggleMenu(false);
+    const ok = await confirmDiscard({
+      title: 'Unsaved changes',
+      message:
+        names.length === 1
+          ? `“${names[0]}” has edits that haven’t been saved to a PDF yet.`
+          : `${names.length} documents have edits that haven’t been saved to a PDF yet.`,
+      items: names.length > 1 ? names : undefined,
+      detail: 'Closing PDF Maker now loses them.',
+      confirm: 'Close anyway',
+      cancel: 'Keep editing',
+    });
+    if (ok) await flushUnsaved();
+    desktop.respondToClose(id, ok);
   });
 }
 

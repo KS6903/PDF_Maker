@@ -1,4 +1,4 @@
-import { createElement, type IconNode } from 'lucide';
+import { createElement, TriangleAlert, type IconNode } from 'lucide';
 
 type Child = Node | string | number | null | undefined | false;
 type Children = Child | Children[];
@@ -189,16 +189,28 @@ export function errorMessage(err: unknown) {
   return msg || 'Something went wrong.';
 }
 
-export function modal(title: string, body: HTMLElement, actions: { label: string; kind?: 'primary' | 'default'; value: string }[]) {
+export function modal(
+  title: string,
+  body: HTMLElement,
+  actions: { label: string; kind?: 'primary' | 'danger' | 'default'; value: string }[],
+  opts: { className?: string; icon?: IconNode; tone?: 'accent' | 'warn' | 'danger' } = {},
+) {
   return new Promise<string | null>((resolve) => {
-    const dlg = h('dialog', { class: 'modal' }) as HTMLDialogElement;
+    const dlg = h('dialog', { class: `modal${opts.className ? ` ${opts.className}` : ''}` }) as HTMLDialogElement;
     const close = (v: string | null) => {
       dlg.close();
       dlg.remove();
       resolve(v);
     };
     dlg.append(
-      h('h2', null, title),
+      opts.icon
+        ? h(
+            'div',
+            { class: 'modal-head' },
+            h('span', { class: `modal-icon ${opts.tone ?? 'accent'}` }, icon(opts.icon, 20)),
+            h('h2', null, title),
+          )
+        : h('h2', null, title),
       body,
       h(
         'div',
@@ -212,9 +224,45 @@ export function modal(title: string, body: HTMLElement, actions: { label: string
     });
     document.body.append(dlg);
     dlg.showModal();
-    const first = dlg.querySelector<HTMLElement>('input, textarea, select');
+    // Focus what the user is meant to act on, never a button that throws work
+    // away: Enter and Esc then both land on the safe choice.
+    const first =
+      dlg.querySelector<HTMLElement>('input, textarea, select') ??
+      dlg.querySelector<HTMLElement>('.modal-actions .btn:not(.danger)');
     first?.focus();
   });
+}
+
+/**
+ * Styled stand-in for window.confirm() for actions that throw work away.
+ * Resolves false for Cancel, Esc and clicking outside, so an accidental
+ * keypress can never discard someone's edits.
+ */
+export async function confirmDiscard(opts: {
+  title: string;
+  message: string;
+  detail?: string;
+  items?: string[];
+  confirm: string;
+  cancel?: string;
+}): Promise<boolean> {
+  const body = h(
+    'div',
+    { class: 'confirm-body' },
+    h('p', null, opts.message),
+    opts.items?.length ? h('ul', { class: 'confirm-list' }, opts.items.map((name) => h('li', null, name))) : null,
+    opts.detail ? h('p', { class: 'confirm-detail' }, opts.detail) : null,
+  );
+  const res = await modal(
+    opts.title,
+    body,
+    [
+      { label: opts.cancel ?? 'Cancel', value: 'cancel' },
+      { label: opts.confirm, value: 'discard', kind: 'danger' },
+    ],
+    { className: 'confirm', icon: TriangleAlert, tone: 'warn' },
+  );
+  return res === 'discard';
 }
 
 export async function askPassword(fileName: string, retry: boolean): Promise<string | null> {

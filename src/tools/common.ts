@@ -10,6 +10,8 @@ export interface AppContext {
   openTool(id: string, file?: PdfSource): void;
   /** A PDF handed over from another tool (consumed on mount). */
   takeIncoming(): PdfSource | undefined;
+  /** Is a specific PDF waiting to be opened? Does not consume it. */
+  hasIncoming(): boolean;
   /** Files handed over from outside the app, e.g. a File Explorer right-click. */
   takeIncomingFiles(): File[] | undefined;
   tools: Tool[];

@@ -20,7 +20,12 @@ export interface SessionTab {
 
 export interface SessionInput extends Omit<SessionTab, 'fileId'> {
   fileId: string;
-  bytes: Uint8Array;
+  /**
+   * Left out for tabs this window never opened, whose bytes are already in
+   * IndexedDB from an earlier session. They are kept so that opening one file
+   * on its own doesn't throw away the documents saved beside it.
+   */
+  bytes?: Uint8Array;
 }
 
 const META = STORES.session;
@@ -57,12 +62,14 @@ export async function saveSession(tabs: SessionInput[], active: number, storedFi
     const keep: SessionTab[] = [];
     const toWrite: [string, Uint8Array][] = [];
     for (const t of tabs) {
-      total += t.bytes.byteLength;
-      // Very large documents aren't worth keeping copies of.
-      if (t.bytes.byteLength > MAX_FILE || total > MAX_TOTAL) continue;
       const { bytes, ...meta } = t;
+      if (bytes) {
+        total += bytes.byteLength;
+        // Very large documents aren't worth keeping copies of.
+        if (bytes.byteLength > MAX_FILE || total > MAX_TOTAL) continue;
+      }
       keep.push(meta);
-      if (!storedFiles.has(t.fileId)) toWrite.push([t.fileId, bytes]);
+      if (bytes && !storedFiles.has(t.fileId)) toWrite.push([t.fileId, bytes]);
     }
     const ids = new Set(keep.map((t) => t.fileId));
     await run([META, DATA], 'readwrite', (tx) => {

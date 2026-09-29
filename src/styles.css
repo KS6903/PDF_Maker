@@ -19,6 +19,7 @@
   --focus: #1473e6;
   --danger: #b42318;
   --success: #1a7f37;
+  --warn: #9a5b06;
   --canvas: #d6d6d6;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 4px 16px rgb(0 0 0 / 0.07);
   --shadow-lg: 0 12px 40px rgb(0 0 0 / 0.18);
@@ -47,6 +48,9 @@
     --accent-soft: #1e3a5c;
     --accent-text: #0a1a2c;
     --focus: #6cb0ff;
+    --danger: #f87171;
+    --success: #5bc47a;
+    --warn: #e0a458;
     --canvas: #141414;
     --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px rgb(0 0 0 / 0.3);
     --shadow-lg: 0 12px 40px rgb(0 0 0 / 0.55);
@@ -68,6 +72,9 @@
   --accent-soft: #1e3a5c;
   --accent-text: #0a1a2c;
   --focus: #6cb0ff;
+  --danger: #f87171;
+  --success: #5bc47a;
+  --warn: #e0a458;
   --canvas: #141414;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px rgb(0 0 0 / 0.3);
   --shadow-lg: 0 12px 40px rgb(0 0 0 / 0.55);
@@ -283,6 +290,11 @@ main.wide > .tool-content {
 }
 .btn.danger {
   color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border-strong));
+}
+.btn.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  border-color: var(--danger);
 }
 .btn.icon-only {
   width: 34px;
@@ -961,9 +973,21 @@ select[multiple] {
   position: absolute;
   top: 0;
   left: 0;
+  /*
+   * pdf.js places every span as a percentage of this box, so it has to be the
+   * page box exactly. Its own sizing rounds down to whole pixels, which leaves
+   * the layer up to a pixel narrower than the canvas and drags the selection
+   * boxes off the glyphs at the right-hand side of wide pages.
+   */
+  width: 100% !important;
+  height: 100% !important;
   overflow: clip;
+  z-index: 0;
   line-height: 1;
   text-align: initial;
+  /* Inherited spacing would widen the spans away from the glyphs underneath. */
+  letter-spacing: normal;
+  word-spacing: normal;
   text-size-adjust: none;
   forced-color-adjust: none;
   transform-origin: 0 0;
@@ -973,6 +997,22 @@ select[multiple] {
   --min-font-size: 1;
   --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
   --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+/*
+ * Sits below the text until a drag starts, then covers the page behind the
+ * spans so dragging past the last line extends the selection instead of
+ * snapping to the whole page.
+ */
+.ed-text .end-of-content {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: -1;
+  cursor: default;
+  user-select: none;
+}
+.ed-text .end-of-content.active {
+  top: 0;
 }
 .ed-text span,
 .ed-text br {
@@ -1141,6 +1181,69 @@ main.wide .tool-content {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 18px;
+}
+
+/* A question with an icon: the tone carries the weight, the text stays plain. */
+.modal-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.modal-head h2 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.25;
+}
+.modal-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.modal-icon.warn {
+  background: color-mix(in srgb, var(--warn) 16%, var(--surface));
+  color: var(--warn);
+}
+.modal-icon.danger {
+  background: color-mix(in srgb, var(--danger) 14%, var(--surface));
+  color: var(--danger);
+}
+.confirm {
+  width: min(430px, calc(100vw - 32px));
+}
+.confirm-body {
+  padding-left: 48px;
+}
+.confirm-body p {
+  margin: 0;
+  line-height: 1.5;
+}
+.confirm-detail {
+  margin-top: 8px !important;
+  font-size: 13px;
+  color: var(--muted);
+}
+.confirm-list {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  max-height: 148px;
+  overflow: auto;
+  list-style: none;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+.confirm-list li {
+  padding: 2px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .sig-modal {
   width: min(620px, calc(100vw - 32px));
@@ -1521,6 +1624,95 @@ main.wide .tool-content {
   padding: 6px 10px;
   font-size: 12px;
   color: var(--muted);
+}
+
+/* Version, with the update state read off it instead of out of a dialog. */
+.menu-version {
+  padding: 6px 10px 2px;
+}
+.version-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.version-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--muted);
+}
+.update-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding: 2px 7px 2px 5px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.update-badge svg {
+  flex: none;
+}
+.update-badge.ok {
+  background: color-mix(in srgb, var(--success) 12%, var(--surface));
+  border-color: color-mix(in srgb, var(--success) 32%, transparent);
+  color: var(--success);
+}
+.update-badge.news {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--accent);
+}
+.update-badge.warn {
+  background: color-mix(in srgb, var(--warn) 14%, var(--surface));
+  border-color: color-mix(in srgb, var(--warn) 34%, transparent);
+  color: var(--warn);
+}
+.update-badge.checking,
+.update-badge.muted {
+  background: var(--sunken);
+  border-color: var(--border);
+  color: var(--muted);
+}
+.update-badge.checking svg {
+  animation: spin 1.1s linear infinite;
+}
+.update-bar {
+  height: 4px;
+  margin-top: 8px;
+  border-radius: 999px;
+  background: var(--sunken);
+  overflow: hidden;
+}
+.update-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.25s ease;
+}
+.update-action {
+  font-size: 13px;
+  color: var(--muted);
+}
+.update-action svg {
+  flex: none;
+}
+.update-action:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.update-action:disabled:hover {
+  background: none;
 }
 .theme-row {
   display: grid;

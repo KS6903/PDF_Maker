@@ -13,7 +13,6 @@ const CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
 const isPortable = !!process.env.PORTABLE_EXECUTABLE_FILE;
 
 let getWindow = () => null;
-let manualCheck = false;
 let status = { state: 'idle' };
 
 function setStatus(next) {
@@ -59,12 +58,9 @@ function setupUpdater(windowGetter) {
     if (response === 0) shell.openExternal(RELEASES_URL);
   });
 
+  // No dialog for "nothing new": the menu shows it next to the version instead.
   autoUpdater.on('update-not-available', () => {
-    setStatus({ state: 'current' });
-    if (manualCheck) {
-      ask({ type: 'info', title: 'No updates', message: 'You’re up to date.', detail: `PDF Maker ${app.getVersion()} is the latest version.` });
-    }
-    manualCheck = false;
+    setStatus({ state: 'current', version: app.getVersion() });
   });
 
   autoUpdater.on('download-progress', (p) => setStatus({ ...status, state: 'downloading', percent: Math.round(p.percent) }));
@@ -90,10 +86,6 @@ function setupUpdater(windowGetter) {
   autoUpdater.on('error', (err) => {
     console.error('Update error:', err?.message ?? err);
     setStatus({ state: 'error' });
-    if (manualCheck) {
-      ask({ type: 'warning', title: 'Update check failed', message: 'Couldn’t check for updates.', detail: 'Check your internet connection and try again.' });
-    }
-    manualCheck = false;
   });
 
   setTimeout(() => check(false), 5000);
@@ -102,14 +94,13 @@ function setupUpdater(windowGetter) {
 
 async function check(manual) {
   if (!app.isPackaged) {
-    if (manual) ask({ type: 'info', title: 'Updates', message: 'Updates are only available in the installed app.' });
+    setStatus({ state: 'unsupported', version: app.getVersion() });
     return status;
   }
   if (status.state === 'ready') {
     if (manual) autoUpdater.emit('update-downloaded', { version: status.version });
     return status;
   }
-  manualCheck = manual;
   try {
     await autoUpdater.checkForUpdates();
   } catch {

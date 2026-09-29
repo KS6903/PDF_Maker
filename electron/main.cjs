@@ -30,7 +30,67 @@ function requestFromArgs(argv) {
 
 const startedAt = Date.now();
 let win = null;
+let closing = false;
+let asking = false;
 let launchRequest = requestFromArgs(process.argv);
+
+/*
+ * Closing the window is the renderer's call, because only it knows which
+ * documents have edits that aren't in a PDF yet. It gets a few seconds to put
+ * up its dialog and answer; if it is wedged or has no editor open, a native
+ * message box asks instead so a close request is never simply swallowed.
+ */
+const closeAnswers = new Map();
+const closeAcks = new Map();
+let nextCloseId = 1;
+let quitting = false;
+
+// A quit (including the updater's restart-to-install) still goes through the
+// window's close handler, so resume it once the window is actually gone.
+app.on('before-quit', () => (quitting = true));
+
+// Sent the moment the renderer picks the request up, so the wait for someone
+// reading a dialog is not mistaken for a wedged window.
+ipcMain.on('confirm-close-ack', (_e, id) => closeAcks.get(id)?.());
+
+ipcMain.on('confirm-close-result', (_e, id, ok) => closeAnswers.get(id)?.(ok));
+
+const ACK_TIMEOUT_MS = 4000;
+const ANSWER_TIMEOUT_MS = 3 * 60 * 1000;
+
+function askRendererToClose(target) {
+  const id = nextCloseId++;
+  return new Promise((resolve) => {
+    let timer = setTimeout(() => finish(nativeCloseFallback(target)), ACK_TIMEOUT_MS);
+    function finish(value) {
+      clearTimeout(timer);
+      closeAnswers.delete(id);
+      closeAcks.delete(id);
+      resolve(value);
+    }
+    closeAcks.set(id, () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => finish(nativeCloseFallback(target)), ANSWER_TIMEOUT_MS);
+    });
+    closeAnswers.set(id, finish);
+    target.webContents.send('confirm-close', id);
+  });
+}
+
+function nativeCloseFallback(target) {
+  if (target.isDestroyed()) return false;
+  const choice = dialog.showMessageBoxSync(target, {
+    type: 'question',
+    buttons: ['Keep editing', 'Close anyway'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+    title: 'Close PDF Maker',
+    message: 'PDF Maker isn’t responding.',
+    detail: 'Close it anyway? Edits that haven’t been saved to a PDF will be lost.',
+  });
+  return choice === 1;
+}
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -131,21 +191,36 @@ function createWindow() {
     if (!url.startsWith(ORIGIN)) e.preventDefault();
   });
 
-  // The editor asks before discarding unsaved edits.
-  win.webContents.on('will-prevent-unload', (e) => {
-    const choice = dialog.showMessageBoxSync(win, {
-      type: 'question',
-      buttons: ['Discard changes', 'Keep editing'],
-      defaultId: 1,
-      cancelId: 1,
-      title: 'Unsaved changes',
-      message: 'You have edits that haven’t been saved to a PDF yet.',
-      detail: 'Close anyway and lose them?',
+  // Ask about unsaved edits in the app's own dialog rather than a native box.
+  // The renderer answers 'confirm-close'; once it says yes the window is
+  // destroyed, which skips the beforeunload path and its second question.
+  win.on('close', (e) => {
+    if (closing || !win) return;
+    e.preventDefault();
+    if (asking) return; // the dialog is already up; don't stack a second one
+    asking = true;
+    const target = win;
+    askRendererToClose(target).then((ok) => {
+      asking = false;
+      if (!ok || target.isDestroyed()) {
+        quitting = false;
+        return;
+      }
+      closing = true;
+      target.destroy();
+      if (quitting) app.quit();
     });
-    if (choice === 0) e.preventDefault();
   });
+  // A confirmed close destroys the window, so this is left for in-page unloads
+  // such as a reload. Those are allowed through: the open tabs and their edits
+  // are on disk and come back with the session.
+  win.webContents.on('will-prevent-unload', (e) => e.preventDefault());
 
-  win.on('closed', () => (win = null));
+  win.on('closed', () => {
+    win = null;
+    closing = false;
+    asking = false;
+  });
   win.webContents.on('did-fail-load', closeSplash);
 }
 
