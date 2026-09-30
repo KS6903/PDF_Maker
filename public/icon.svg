@@ -7,17 +7,21 @@
   </defs>
   <rect width="64" height="64" rx="14" fill="url(#tile)"/>
   <!--
-    A leaf, which is what a folio is. The blade is broad like a lotus pad but
-    keeps a soft tip, since a fully round blade reads as a paddle rather than a
-    leaf. The curved petiole is what carries the shape at 16px: without it the
-    blade alone reads as a lens, and a straight stem reads as a magnifier.
+    A lotus in bloom: an upright centre petal with two pairs fanning out from a
+    single base point at the bottom, each pair shorter and narrower than the
+    last so the outline steps down into a bloom.
 
-    The blade runs -18.5..18.5 along its own axis and the stem reaches 26, so
-    the group is shifted back by half that overhang before it is rotated, which
-    leaves the whole mark sitting centred on the tile.
+    The petals are deliberately broad and cupped. Narrow pointed petals
+    radiating from one point read as a cannabis leaf, which is what a seven
+    petal version of this looked like; widening them and letting neighbours
+    overlap is what makes it read as a lotus, and it keeps the silhouette
+    legible once it is down at 16px.
   -->
-  <g transform="translate(32 32) rotate(-38) translate(0 -3.5)">
-    <path fill="#fff" d="M0-18.5C15.8-10.5 17.5 6 0 18.5-17.5 6-15.8-10.5 0-18.5Z"/>
-    <path fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" d="M0 18C0 21.5 1.4 24.2 3.6 26"/>
+  <g fill="#fff" transform="translate(32 47)">
+    <path d="M0 0C-9.02-9.57-9.5-20.88 0-29 9.5-20.88 9.03-9.57 0 0Z"/>
+    <path transform="rotate(-38)" d="M0 0C-7.94-8.23-8.36-17.96 0-24.94 8.36-17.96 7.94-8.23 0 0Z"/>
+    <path transform="rotate(38)" d="M0 0C-7.94-8.23-8.36-17.96 0-24.94 8.36-17.96 7.94-8.23 0 0Z"/>
+    <path transform="rotate(-76)" d="M0 0C-6.99-7.08-7.36-15.44 0-21.45 7.36-15.44 6.99-7.08 0 0Z"/>
+    <path transform="rotate(76)" d="M0 0C-6.99-7.08-7.36-15.44 0-21.45 7.36-15.44 6.99-7.08 0 0Z"/>
   </g>
 </svg>

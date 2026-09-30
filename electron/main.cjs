@@ -229,8 +229,16 @@ function createWindow() {
     if (closing || !win) return;
     e.preventDefault();
     if (asking) return; // the dialog is already up; don't stack a second one
-    asking = true;
     const target = win;
+    // Closed while still starting up: the page cannot answer yet and has
+    // nothing unsaved, so go straight out rather than accusing it of hanging.
+    if (target.webContents.isLoading()) {
+      closing = true;
+      target.destroy();
+      if (quitting) app.quit();
+      return;
+    }
+    asking = true;
     askRendererToClose(target).then((ok) => {
       asking = false;
       if (!ok || target.isDestroyed()) {

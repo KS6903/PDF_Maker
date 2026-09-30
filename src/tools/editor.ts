@@ -284,9 +284,9 @@ export const editorTool: Tool = {
       { class: 'ed-view' },
       pageLabel,
       h('span', { class: 'sep' }),
-      button(null, () => setZoom(zoom / 1.2), { icon: ZoomOut, title: 'Zoom out', kind: 'ghost' }),
+      button(null, () => setZoom(zoom / 1.2), { icon: ZoomOut, title: 'Zoom out (pinch, or Ctrl and the wheel)', kind: 'ghost' }),
       zoomLabel,
-      button(null, () => setZoom(zoom * 1.2), { icon: ZoomIn, title: 'Zoom in', kind: 'ghost' }),
+      button(null, () => setZoom(zoom * 1.2), { icon: ZoomIn, title: 'Zoom in (pinch, or Ctrl and the wheel)', kind: 'ghost' }),
       button('Fit', () => fitWidth(), { kind: 'ghost', title: 'Fit to width' }),
     );
     const tabsEl = h('div', { class: 'ed-tabs', role: 'tablist', 'aria-label': 'Open documents' });
@@ -813,6 +813,88 @@ export const editorTool: Tool = {
       const maxW = Math.max(...pages.map((p) => p.width), 1);
       setZoom(Math.min(2, (scroller.clientWidth - 48) / maxW));
     }
+
+    /**
+     * Zoom while holding the document point under (cx, cy) still, which is what
+     * makes a pinch feel like it is pulling the page rather than jumping.
+     */
+    function zoomAt(z: number, cx: number, cy: number) {
+      const next = Math.min(5, Math.max(0.25, z));
+      if (Math.abs(next - zoom) < 0.0005) return;
+      const r = scroller.getBoundingClientRect();
+      const k = next / zoom;
+      // Where the anchor currently sits inside the scrolled content.
+      const ax = scroller.scrollLeft + cx - r.left;
+      const ay = scroller.scrollTop + cy - r.top;
+      zoom = next;
+      zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
+      pages.forEach(layoutPage);
+      scroller.scrollLeft = ax * k - (cx - r.left);
+      scroller.scrollTop = ay * k - (cy - r.top);
+      pages.filter(isVisible).forEach((p) => void draw(p));
+    }
+
+    /* ---------- pinch and ctrl+wheel zoom ---------- */
+
+    /** Live touch points, so two of them can be read as a pinch. */
+    const touchPoints = new Map<number, { x: number; y: number }>();
+    let pinch: { gap: number; zoom: number } | null = null;
+    const gapOf = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
+
+    /** Drop whatever the first finger had begun, so a pinch never leaves a mark. */
+    function cancelDrag() {
+      if (!drag) return;
+      const d = drag;
+      drag = null;
+      if (d.kind === 'rect' || d.kind === 'ink' || d.kind === 'line') {
+        anns = anns.filter((a) => a.id !== d.ann.id);
+      } else {
+        Object.assign(d.ann, d.orig);
+      }
+      renderLayer(pages[d.ann.page]);
+    }
+
+    // Captured on the scroller so a second finger is seen before the drawing
+    // handlers on the page layer get to act on it.
+    const onPinchDown = (e: PointerEvent) => {
+      if (e.pointerType !== 'touch') return;
+      touchPoints.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (touchPoints.size !== 2) return;
+      const [a, b] = [...touchPoints.values()];
+      pinch = { gap: gapOf(a, b), zoom };
+      cancelDrag();
+      e.stopPropagation();
+    };
+    const onPinchMove = (e: PointerEvent) => {
+      if (e.pointerType !== 'touch' || !touchPoints.has(e.pointerId)) return;
+      touchPoints.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (!pinch || touchPoints.size < 2 || pinch.gap <= 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const [a, b] = [...touchPoints.values()];
+      zoomAt(pinch.zoom * (gapOf(a, b) / pinch.gap), (a.x + b.x) / 2, (a.y + b.y) / 2);
+    };
+    const onPinchUp = (e: PointerEvent) => {
+      if (e.pointerType !== 'touch') return;
+      touchPoints.delete(e.pointerId);
+      if (touchPoints.size < 2) pinch = null;
+    };
+    // A trackpad pinch reaches the page as a wheel event with ctrl held, which
+    // is also how Ctrl and the mouse wheel arrive. A trackpad sends a stream of
+    // small deltas while one mouse notch is a single large one, so the step is
+    // capped: without it a notch jumps several hundred percent at once.
+    const onZoomWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      const px = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+      const step = Math.max(-40, Math.min(40, px));
+      zoomAt(zoom * Math.exp(-step / 200), e.clientX, e.clientY);
+    };
+    scroller.addEventListener('pointerdown', onPinchDown, { capture: true });
+    scroller.addEventListener('pointermove', onPinchMove, { capture: true, passive: false });
+    scroller.addEventListener('pointerup', onPinchUp, { capture: true });
+    scroller.addEventListener('pointercancel', onPinchUp, { capture: true });
+    scroller.addEventListener('wheel', onZoomWheel, { passive: false });
 
     function updatePageLabel() {
       const s = scroller.getBoundingClientRect();
@@ -1781,6 +1863,11 @@ export const editorTool: Tool = {
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('resize', onResize);
+      scroller.removeEventListener('pointerdown', onPinchDown, { capture: true });
+      scroller.removeEventListener('pointermove', onPinchMove, { capture: true });
+      scroller.removeEventListener('pointerup', onPinchUp, { capture: true });
+      scroller.removeEventListener('pointercancel', onPinchUp, { capture: true });
+      scroller.removeEventListener('wheel', onZoomWheel);
       window.removeEventListener('beforeunload', onBeforeUnload);
       clearUnsavedGuard(guard);
       void rememberSession(true);
