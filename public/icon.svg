@@ -7,11 +7,17 @@
   </defs>
   <rect width="64" height="64" rx="14" fill="url(#tile)"/>
   <!--
-    A bold geometric F, centred on the tile: the stem starts 20 in from the
-    left and the top arm ends 20 in from the right. Stem and arms are the same
-    weight as each other, so the letter holds together at 16px.
+    A leaf, which is what a folio is. The blade is broad like a lotus pad but
+    keeps a soft tip, since a fully round blade reads as a paddle rather than a
+    leaf. The curved petiole is what carries the shape at 16px: without it the
+    blade alone reads as a lens, and a straight stem reads as a magnifier.
+
+    The blade runs -18.5..18.5 along its own axis and the stem reaches 26, so
+    the group is shifted back by half that overhang before it is rotated, which
+    leaves the whole mark sitting centred on the tile.
   -->
-  <path
-    fill="#fff"
-    d="M22.5 14.5h19a2.5 2.5 0 0 1 2.5 2.5v2a2.5 2.5 0 0 1-2.5 2.5H29v6h8.5a2.5 2.5 0 0 1 2.5 2.5v2a2.5 2.5 0 0 1-2.5 2.5H29v13a2.5 2.5 0 0 1-2.5 2.5h-4a2.5 2.5 0 0 1-2.5-2.5V17a2.5 2.5 0 0 1 2.5-2.5z"/>
+  <g transform="translate(32 32) rotate(-38) translate(0 -3.5)">
+    <path fill="#fff" d="M0-18.5C15.8-10.5 17.5 6 0 18.5-17.5 6-15.8-10.5 0-18.5Z"/>
+    <path fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" d="M0 18C0 21.5 1.4 24.2 3.6 26"/>
+  </g>
 </svg>
