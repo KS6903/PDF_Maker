@@ -21,7 +21,7 @@ import {
   X,
 } from 'lucide';
 import { h, icon, button, toast, confirmDiscard } from './lib/ui';
-import { unsavedNames, flushUnsaved } from './lib/unsaved';
+import { unsavedNames } from './lib/unsaved';
 import { initTheme, getTheme, setTheme, type ThemeMode } from './lib/theme';
 import { CATALOG, RIBBON, byLabel, entryHash, type CatalogEntry } from './lib/catalog';
 import type { PdfSource } from './lib/pdf';
@@ -606,7 +606,6 @@ if (desktop) {
       confirm: 'Close anyway',
       cancel: 'Keep editing',
     });
-    if (ok) await flushUnsaved();
     desktop.respondToClose(id, ok);
   });
 }

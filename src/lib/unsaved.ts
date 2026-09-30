@@ -6,8 +6,6 @@
 export interface UnsavedGuard {
   /** Names of open documents with edits not yet written to a PDF. */
   names(): string[];
-  /** Write anything still pending to disk before the app goes away. */
-  flush(): Promise<void>;
 }
 
 let guard: UnsavedGuard | null = null;
@@ -22,8 +20,4 @@ export function clearUnsavedGuard(g: UnsavedGuard) {
 
 export function unsavedNames(): string[] {
   return guard?.names() ?? [];
-}
-
-export function flushUnsaved(): Promise<void> {
-  return guard?.flush() ?? Promise.resolve();
 }
