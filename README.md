@@ -1,4 +1,4 @@
-# PDF Maker
+# Folio
 
 An all-in-one PDF editor, maker and converter that runs entirely on your computer.
 
@@ -75,8 +75,8 @@ npm run dist:win
 
 This produces, in `release/`:
 
-- `PDF-Maker-<version>-portable.exe`, single file, no install; just run it.
-- `PDF-Maker-<version>-setup.exe`, installer with Start-menu/desktop shortcuts and "Open with PDF Maker" for `.pdf` files.
+- `Folio-<version>-portable.exe`, single file, no install; just run it.
+- `Folio-<version>-setup.exe`, installer with Start-menu/desktop shortcuts and "Open with Folio" for `.pdf` files.
 
 The executables are unsigned, so Windows SmartScreen may show "Windows protected your PC" the first
 time, click **More info → Run anyway**. On launch the app shows a splash window with the logo,
@@ -88,11 +88,11 @@ The desktop app can add entries to the Windows right-click menu:
 
 | Right-click on | Entry | Opens |
 | --- | --- | --- |
-| A PDF | Edit with PDF Maker | the editor |
-| PDFs (several selected) | Merge with PDF Maker | Merge PDFs, files queued |
-| A PDF | Compress with PDF Maker | Compress |
-| Pictures (JPG, PNG, WebP, BMP, GIF, TIFF) | Convert to PDF with PDF Maker | Images to PDF |
-| Word, text, Markdown or HTML | Convert to PDF with PDF Maker | Create PDF, file imported |
+| A PDF | Edit with Folio | the editor |
+| PDFs (several selected) | Merge with Folio | Merge PDFs, files queued |
+| A PDF | Compress with Folio | Compress |
+| Pictures (JPG, PNG, WebP, BMP, GIF, TIFF) | Convert to PDF with Folio | Images to PDF |
+| Word, text, Markdown or HTML | Convert to PDF with Folio | Create PDF, file imported |
 
 The installer sets these up, and the home screen has a **File Explorer menu** panel to add or
 remove them at any time (handy for the portable build). The entries are written under

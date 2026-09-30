@@ -1,5 +1,7 @@
 ; Adds the File Explorer right-click entries for the installing user, and
 ; removes them on uninstall. Mirrors electron/shell-integration.cjs.
+; "PDFMaker.<verb>" is a registry key name, not a label. It stays as it is so
+; entries written by older versions are still overwritten and removed.
 !macro AddVerb EXT VERB LABEL ARGS MULTI
   WriteRegStr HKCU "Software\Classes\SystemFileAssociations\${EXT}\shell\PDFMaker.${VERB}" "" "${LABEL}"
   WriteRegStr HKCU "Software\Classes\SystemFileAssociations\${EXT}\shell\PDFMaker.${VERB}" "Icon" "$INSTDIR\${APP_EXECUTABLE_FILENAME},0"
@@ -15,23 +17,23 @@
 !macroend
 
 !macro customInstall
-  !insertmacro AddVerb ".pdf" "Edit" "Edit with PDF Maker" "--edit" "0"
-  !insertmacro AddVerb ".pdf" "Merge" "Merge with PDF Maker" "--merge" "1"
-  !insertmacro AddVerb ".pdf" "Compress" "Compress with PDF Maker" "--compress" "0"
-  !insertmacro AddVerb ".jpg" "Convert" "Convert to PDF with PDF Maker" "--images" "1"
-  !insertmacro AddVerb ".jpeg" "Convert" "Convert to PDF with PDF Maker" "--images" "1"
-  !insertmacro AddVerb ".png" "Convert" "Convert to PDF with PDF Maker" "--images" "1"
-  !insertmacro AddVerb ".webp" "Convert" "Convert to PDF with PDF Maker" "--images" "1"
-  !insertmacro AddVerb ".bmp" "Convert" "Convert to PDF with PDF Maker" "--images" "1"
-  !insertmacro AddVerb ".gif" "Convert" "Convert to PDF with PDF Maker" "--images" "1"
-  !insertmacro AddVerb ".tif" "Convert" "Convert to PDF with PDF Maker" "--images" "1"
-  !insertmacro AddVerb ".tiff" "Convert" "Convert to PDF with PDF Maker" "--images" "1"
-  !insertmacro AddVerb ".docx" "Convert" "Convert to PDF with PDF Maker" "--create" "0"
-  !insertmacro AddVerb ".txt" "Convert" "Convert to PDF with PDF Maker" "--create" "0"
-  !insertmacro AddVerb ".md" "Convert" "Convert to PDF with PDF Maker" "--create" "0"
-  !insertmacro AddVerb ".markdown" "Convert" "Convert to PDF with PDF Maker" "--create" "0"
-  !insertmacro AddVerb ".html" "Convert" "Convert to PDF with PDF Maker" "--create" "0"
-  !insertmacro AddVerb ".htm" "Convert" "Convert to PDF with PDF Maker" "--create" "0"
+  !insertmacro AddVerb ".pdf" "Edit" "Edit with Folio" "--edit" "0"
+  !insertmacro AddVerb ".pdf" "Merge" "Merge with Folio" "--merge" "1"
+  !insertmacro AddVerb ".pdf" "Compress" "Compress with Folio" "--compress" "0"
+  !insertmacro AddVerb ".jpg" "Convert" "Convert to PDF with Folio" "--images" "1"
+  !insertmacro AddVerb ".jpeg" "Convert" "Convert to PDF with Folio" "--images" "1"
+  !insertmacro AddVerb ".png" "Convert" "Convert to PDF with Folio" "--images" "1"
+  !insertmacro AddVerb ".webp" "Convert" "Convert to PDF with Folio" "--images" "1"
+  !insertmacro AddVerb ".bmp" "Convert" "Convert to PDF with Folio" "--images" "1"
+  !insertmacro AddVerb ".gif" "Convert" "Convert to PDF with Folio" "--images" "1"
+  !insertmacro AddVerb ".tif" "Convert" "Convert to PDF with Folio" "--images" "1"
+  !insertmacro AddVerb ".tiff" "Convert" "Convert to PDF with Folio" "--images" "1"
+  !insertmacro AddVerb ".docx" "Convert" "Convert to PDF with Folio" "--create" "0"
+  !insertmacro AddVerb ".txt" "Convert" "Convert to PDF with Folio" "--create" "0"
+  !insertmacro AddVerb ".md" "Convert" "Convert to PDF with Folio" "--create" "0"
+  !insertmacro AddVerb ".markdown" "Convert" "Convert to PDF with Folio" "--create" "0"
+  !insertmacro AddVerb ".html" "Convert" "Convert to PDF with Folio" "--create" "0"
+  !insertmacro AddVerb ".htm" "Convert" "Convert to PDF with Folio" "--create" "0"
 !macroend
 
 !macro customUnInstall

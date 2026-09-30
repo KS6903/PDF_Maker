@@ -119,7 +119,7 @@ function setupUpdater(windowGetter) {
       defaultId: 0,
       cancelId: 1,
       title: 'Update available',
-      message: `PDF Maker ${info.version} is available.`,
+      message: `Folio ${info.version} is available.`,
       detail: `You have ${app.getVersion()}. Download the new version, then replace this file with it.`,
     });
     if (response === 0) shell.openExternal(RELEASES_URL);

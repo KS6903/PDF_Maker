@@ -1,4 +1,4 @@
-// Electron shell for PDF Maker: serves the built web app from dist/ over a
+// Electron shell for Folio: serves the built web app from dist/ over a
 // private app:// scheme and adds desktop niceties (open-with, save dialogs).
 const { app, BrowserWindow, protocol, net, session, shell, Menu, ipcMain, dialog } = require('electron');
 const path = require('node:path');
@@ -7,7 +7,38 @@ const { pathToFileURL } = require('node:url');
 const { setupUpdater } = require('./updater.cjs');
 const shellIntegration = require('./shell-integration.cjs');
 
+/*
+ * The app was called PDF Maker up to 1.5.1, and the user data folder is named
+ * after the product. Anyone upgrading already has recent files, open tabs with
+ * unsaved edits, saved signatures and their theme under the old name, so keep
+ * reading that folder rather than starting empty under the new one. A fresh
+ * install has no old profile and gets the new name. Must run before app ready.
+ */
+const LEGACY_DATA_DIR = 'PDF Maker';
+
+/**
+ * Whether a folder actually holds a profile. Checked by content, not by mere
+ * existence: an empty folder left by a backup tool or a crash would otherwise
+ * be taken for a live profile and quietly strand everything saved so far.
+ */
+function holdsProfile(dir) {
+  return fs.existsSync(path.join(dir, 'Preferences')) || fs.existsSync(path.join(dir, 'Local Storage'));
+}
+
+try {
+  // An explicit --user-data-dir is the caller's decision and always wins.
+  if (!process.argv.some((a) => a === '--user-data-dir' || a.startsWith('--user-data-dir='))) {
+    const appData = app.getPath('appData');
+    const legacy = path.join(appData, LEGACY_DATA_DIR);
+    if (!holdsProfile(path.join(appData, app.getName())) && holdsProfile(legacy)) app.setPath('userData', legacy);
+  }
+} catch (err) {
+  console.error('Could not check for the old user data folder:', err?.message ?? err);
+}
+
 const DIST = path.join(__dirname, '..', 'dist');
+// Never change this: localStorage and IndexedDB are keyed to this origin, so a
+// different one would hide every saved session, signature and recent file.
 const ORIGIN = 'app://pdfmaker';
 const DEV_ICON = path.join(__dirname, '..', 'build', 'icon.png');
 
@@ -85,8 +116,8 @@ function nativeCloseFallback(target) {
     defaultId: 0,
     cancelId: 0,
     noLink: true,
-    title: 'Close PDF Maker',
-    message: 'PDF Maker isn’t responding.',
+    title: 'Close Folio',
+    message: 'Folio isn’t responding.',
     detail: 'Close it anyway? Edits that haven’t been saved to a PDF will be lost.',
   });
   return choice === 1;
@@ -158,7 +189,7 @@ function createWindow() {
     height: 880,
     minWidth: 760,
     minHeight: 520,
-    title: 'PDF Maker',
+    title: 'Folio',
     backgroundColor: '#f5f4f0',
     // Packaged builds use the .exe's own icon; this covers `npm run app`.
     icon: fs.existsSync(DEV_ICON) ? DEV_ICON : undefined,

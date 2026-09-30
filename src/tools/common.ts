@@ -47,7 +47,7 @@ export function resultsPanel(ctx: AppContext) {
         ? button(
             'Download all (.zip)',
             async () => {
-              const zip = await withBusy('Zipping…', () => zipOutputs(files, 'pdf-maker-files'));
+              const zip = await withBusy('Zipping…', () => zipOutputs(files, 'folio-files'));
               if (zip) download(zip);
             },
             { icon: FileArchive, kind: 'primary' },

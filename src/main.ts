@@ -133,7 +133,7 @@ menuPanel.addEventListener('click', (e) => e.stopPropagation());
  * a restart-to-install - still open one.
  */
 const browserNote = h('div', { class: 'menu-note' }, 'Running in a browser');
-const versionLabel = h('span', { class: 'version-name' }, 'PDF Maker');
+const versionLabel = h('span', { class: 'version-name' }, 'Folio');
 const updateBadge = h('span', { class: 'update-badge', hidden: true });
 const updateFill = h('i', { class: 'update-fill' });
 const updateBar = h('div', { class: 'update-bar', hidden: true }, updateFill);
@@ -419,7 +419,7 @@ function route() {
   renderPanel();
   main.replaceChildren();
   main.className = tool?.wide ? 'wide' : '';
-  document.title = label ? `${label} · PDF Maker` : id === 'tools' ? 'All tools · PDF Maker' : 'PDF Maker';
+  document.title = label ? `${label} · Folio` : id === 'tools' ? 'All tools · Folio' : 'Folio';
   renderDocTabs(label ?? (id === 'tools' ? 'All tools' : 'Home'));
   if (!tool) {
     incoming = undefined;
@@ -447,7 +447,7 @@ function renderDocTabs(label: string) {
   docTabs.replaceChildren(h('span', { class: 'doc-tab active' }, h('span', { class: 'doc-tab-name' }, label)));
 }
 
-/* ---------- desktop app: PDFs opened via "Open with PDF Maker" ---------- */
+/* ---------- desktop app: PDFs opened via "Open with Folio" ---------- */
 interface DesktopFile {
   name: string;
   data: Uint8Array;
@@ -518,7 +518,7 @@ if (desktop) {
       browserNote.hidden = true;
       versionLine.hidden = false;
       updateAction.hidden = false;
-      versionLabel.textContent = `PDF Maker ${info.version}`;
+      versionLabel.textContent = `Folio ${info.version}`;
 
       const badge = badges[s.state];
       updateBadge.hidden = !badge;
@@ -551,7 +551,7 @@ if (desktop) {
 
       // The ribbon button appears only when there is something to do.
       const pill =
-        s.state === 'ready' ? ['ready', `Restart to update${s.version ? ` to ${s.version}` : ''}`, 'Installs the update and reopens PDF Maker']
+        s.state === 'ready' ? ['ready', `Restart to update${s.version ? ` to ${s.version}` : ''}`, 'Installs the update and reopens Folio']
         : s.state === 'downloading' ? ['busy', s.percent ? `Updating ${s.percent}%` : 'Downloading…', 'Downloading the update']
         : s.state === 'available' ? ['news', `Update to ${s.version ?? 'the new version'}`, info.portable ? 'Opens the download page' : 'Downloads the update now']
         : null;
@@ -602,7 +602,7 @@ if (desktop) {
           ? `“${names[0]}” has edits that haven’t been saved to a PDF yet.`
           : `${names.length} documents have edits that haven’t been saved to a PDF yet.`,
       items: names.length > 1 ? names : undefined,
-      detail: 'Closing PDF Maker now loses them.',
+      detail: 'Closing Folio now loses them.',
       confirm: 'Close anyway',
       cancel: 'Keep editing',
     });

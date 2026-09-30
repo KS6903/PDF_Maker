@@ -34,11 +34,11 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.0"
   },
-  "productName": "PDF Maker",
+  "productName": "Folio",
   "main": "electron/main.cjs",
   "build": {
     "appId": "com.ks6903.pdfmaker",
-    "productName": "PDF Maker",
+    "productName": "Folio",
     "copyright": "Copyright © 2026 KS6903",
     "directories": {
       "output": "release",
@@ -69,16 +69,16 @@
       "signAndEditExecutable": true
     },
     "portable": {
-      "artifactName": "PDF-Maker-${version}-portable.exe"
+      "artifactName": "Folio-${version}-portable.exe"
     },
     "nsis": {
-      "artifactName": "PDF-Maker-${version}-setup.exe",
+      "artifactName": "Folio-${version}-setup.exe",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "PDF Maker",
+      "shortcutName": "Folio",
       "include": "build/installer.nsh"
     },
     "fileAssociations": [

@@ -34,7 +34,7 @@ import {
 
 /**
  * The "All tools" list, named the way Acrobat names things so the panel reads
- * the same. Entries with a `tool` open one of PDF Maker's own tools. Entries
+ * the same. Entries with a `tool` open one of Folio's own tools. Entries
  * with a `status` are listed so the panel is complete, but say plainly that
  * they do not work yet and why.
  */
@@ -42,7 +42,7 @@ export interface CatalogEntry {
   label: string;
   icon: IconNode;
   color: string;
-  /** Id of the PDF Maker tool this opens. */
+  /** Id of the Folio tool this opens. */
   tool?: string;
   /** Hash to open instead of a tool id, for entries that need a specific mode. */
   hash?: string;
@@ -170,7 +170,7 @@ export const CATALOG: CatalogEntry[] = [
     more: true,
   },
 
-  // PDF Maker tools that Acrobat has no matching entry for.
+  // Folio tools that Acrobat has no matching entry for.
   { label: 'Split a PDF', icon: Scissors, color: '#db2777', tool: 'split', more: true },
   { label: 'Add page numbers', icon: Hash, color: '#d97706', tool: 'page-numbers', more: true },
   { label: 'Images to PDF', icon: Images, color: '#0891b2', tool: 'images-to-pdf', more: true },

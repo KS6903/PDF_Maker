@@ -63,7 +63,7 @@ export function renderHome(ctx: AppContext, tools: Tool[]) {
     h(
       'header',
       { class: 'home-head' },
-      h('h1', null, 'Welcome to PDF Maker'),
+      h('h1', null, 'Welcome to Folio'),
       h('p', { class: 'muted' }, 'Edit, sign, convert and organize PDFs. Everything stays on this computer.'),
     ),
     h(
@@ -190,7 +190,7 @@ export function renderAllTools(tools: Tool[]) {
   );
 }
 
-/** Add or remove the "Convert to PDF with PDF Maker" entries in File Explorer. */
+/** Add or remove the "Convert to PDF with Folio" entries in File Explorer. */
 function explorerPanel() {
   const el = h('section', { class: 'explorer-panel', hidden: true });
   if (!shellIntegration) return el;
@@ -201,7 +201,7 @@ function explorerPanel() {
   const paint = () => {
     status.textContent = registered
       ? 'Right-click a file in File Explorer to convert, edit, merge or compress it.'
-      : 'Add entries like "Convert to PDF with PDF Maker" to the File Explorer right-click menu.';
+      : 'Add entries like "Convert to PDF with Folio" to the File Explorer right-click menu.';
     action.replaceChildren(h('span', null, registered ? 'Remove from File Explorer' : 'Add to File Explorer'));
     action.className = `btn ${registered ? 'default' : 'primary'}`;
   };

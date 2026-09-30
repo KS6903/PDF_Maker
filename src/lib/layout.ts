@@ -369,8 +369,8 @@ export function imageUrlToPng(src: string): Promise<Uint8Array> {
 export async function blocksToPdf(blocks: Block[], o: LayoutOptions): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   if (o.title) doc.setTitle(o.title);
-  doc.setProducer('PDF Maker');
-  doc.setCreator('PDF Maker');
+  doc.setProducer('Folio');
+  doc.setCreator('Folio');
   const w = new Writer(doc, o);
   for (const b of blocks) {
     switch (b.kind) {

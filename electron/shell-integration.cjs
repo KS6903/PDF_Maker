@@ -1,4 +1,4 @@
-// Right-click entries in File Explorer ("Convert to PDF with PDF Maker", ...).
+// Right-click entries in File Explorer ("Convert to PDF with Folio", ...).
 //
 // These are written under HKEY_CURRENT_USER, so no admin rights are needed and
 // nothing outside this user account is touched. On Windows 11 entries like
@@ -8,6 +8,8 @@ const { app } = require('electron');
 const { spawnSync } = require('node:child_process');
 
 const ROOT = 'HKCU\\Software\\Classes\\SystemFileAssociations';
+// Registry key name, not a label. It stays as it is so entries written by
+// older versions are still found and removed; only the text people see changed.
 const KEY = 'PDFMaker';
 
 const IMAGE_EXT = ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif', '.tif', '.tiff'];
@@ -18,11 +20,11 @@ function entries(exe) {
   const list = [];
   const add = (ext, verb, label, args, multi) => list.push({ path: `${ROOT}\\${ext}\\shell\\${KEY}.${verb}`, label, command: `"${exe}"${args} "%1"`, icon: `"${exe}",0`, multi });
 
-  add('.pdf', 'Edit', 'Edit with PDF Maker', ' --edit', false);
-  add('.pdf', 'Merge', 'Merge with PDF Maker', ' --merge', true);
-  add('.pdf', 'Compress', 'Compress with PDF Maker', ' --compress', false);
-  for (const ext of IMAGE_EXT) add(ext, 'Convert', 'Convert to PDF with PDF Maker', ' --images', true);
-  for (const ext of DOC_EXT) add(ext, 'Convert', 'Convert to PDF with PDF Maker', ' --create', false);
+  add('.pdf', 'Edit', 'Edit with Folio', ' --edit', false);
+  add('.pdf', 'Merge', 'Merge with Folio', ' --merge', true);
+  add('.pdf', 'Compress', 'Compress with Folio', ' --compress', false);
+  for (const ext of IMAGE_EXT) add(ext, 'Convert', 'Convert to PDF with Folio', ' --images', true);
+  for (const ext of DOC_EXT) add(ext, 'Convert', 'Convert to PDF with Folio', ' --create', false);
   return list;
 }
 
