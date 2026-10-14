@@ -1,9 +1,67 @@
 import { Stamp } from 'lucide';
-import { degrees, rgb } from '@cantoo/pdf-lib';
+import { degrees, rgb, type PDFDocument } from '@cantoo/pdf-lib';
 import { h, field, select, numberInput, textInput } from '../lib/ui';
 import { loadLib, parseRanges, pdfOutput, baseName, hexToRgb01, visualFrame } from '../lib/pdf';
 import { FontCache, FONT_OPTIONS, safeText, type FontFamily } from '../lib/fonts';
 import { simpleTool, panel, type Tool } from './common';
+
+export type WatermarkLayout = 'center' | 'tile' | 'top' | 'bottom';
+
+export interface WatermarkOptions {
+  text: string;
+  family: FontFamily;
+  size: number;
+  color: string;
+  /** Percent, 1-100. */
+  opacity: number;
+  /** Degrees, counter-clockwise as the reader sees the page. */
+  rotation: number;
+  layout: WatermarkLayout;
+  /** Page ranges; empty for all pages. */
+  pages: string;
+}
+
+/** Stamp text across the chosen pages. Shared with guided actions. */
+export async function addWatermark(doc: PDFDocument, o: WatermarkOptions) {
+  const fonts = new FontCache(doc);
+  const font = await fonts.get(o.family, true);
+  const t = safeText(font, o.text || ' ');
+  const s = o.size || 48;
+  const [r, g, b] = hexToRgb01(o.color);
+  const opts = { font, size: s, color: rgb(r, g, b), opacity: Math.min(1, Math.max(0.01, o.opacity / 100)) };
+  const tw = font.widthOfTextAtSize(t, s);
+  const th = font.heightAtSize(s, { descender: false });
+
+  for (const i of new Set(parseRanges(o.pages, doc.getPageCount()))) {
+    const page = doc.getPage(i);
+    const frame = visualFrame(page);
+    const { width, height } = frame;
+    // Work in visual space (y up from the bottom), then map to PDF space.
+    const rot = o.rotation + frame.rotation;
+    const rad = (rot * Math.PI) / 180;
+    const draw = (cx: number, cy: number) => {
+      const c = frame.toPdf(cx, height - cy);
+      // Offset so the text's center lands on the point after rotation around its origin.
+      page.drawText(t, {
+        ...opts,
+        x: c.x - (tw / 2) * Math.cos(rad) + (th / 2) * Math.sin(rad),
+        y: c.y - (tw / 2) * Math.sin(rad) - (th / 2) * Math.cos(rad),
+        rotate: degrees(rot),
+      });
+    };
+    const vRad = (o.rotation * Math.PI) / 180;
+    if (o.layout === 'center') draw(width / 2, height / 2);
+    else if (o.layout === 'top') draw(width / 2, height - s);
+    else if (o.layout === 'bottom') draw(width / 2, s);
+    else {
+      const stepX = tw * Math.abs(Math.cos(vRad)) + s * 2.5;
+      const stepY = tw * Math.abs(Math.sin(vRad)) + s * 2.5;
+      for (let y = stepY / 2, row = 0; y < height + stepY; y += stepY, row++) {
+        for (let x = (row % 2 ? stepX / 2 : 0) + stepX / 4; x < width + stepX; x += stepX) draw(x, y);
+      }
+    }
+  }
+}
 
 export const watermarkTool: Tool = {
   id: 'watermark',
@@ -19,7 +77,7 @@ export const watermarkTool: Tool = {
     const color = h('input', { type: 'color', value: '#d23a2a' }) as HTMLInputElement;
     const opacity = numberInput(25, { min: 1, max: 100 });
     const rotation = numberInput(45, { min: -180, max: 180 });
-    const layout = select<'center' | 'tile' | 'top' | 'bottom'>(
+    const layout = select<WatermarkLayout>(
       [
         ['center', 'Once, centered'],
         ['tile', 'Tiled across the page'],
@@ -50,45 +108,16 @@ export const watermarkTool: Tool = {
         ),
       run: async (src) => {
         const doc = await loadLib(src);
-        const fonts = new FontCache(doc);
-        const font = await fonts.get(family.value as FontFamily, true);
-        const t = safeText(font, text.value || ' ');
-        const s = +size.value || 48;
-        const [r, g, b] = hexToRgb01(color.value);
-        const opts = { font, size: s, color: rgb(r, g, b), opacity: Math.min(1, Math.max(0.01, +opacity.value / 100)) };
-        const tw = font.widthOfTextAtSize(t, s);
-        const th = font.heightAtSize(s, { descender: false });
-
-        for (const i of new Set(parseRanges(pages.value, doc.getPageCount()))) {
-          const page = doc.getPage(i);
-          const frame = visualFrame(page);
-          const { width, height } = frame;
-          // Work in visual space (y up from the bottom), then map to PDF space.
-          const rot = (+rotation.value || 0) + frame.rotation;
-          const rad = (rot * Math.PI) / 180;
-          const draw = (cx: number, cy: number) => {
-            const c = frame.toPdf(cx, height - cy);
-            // Offset so the text's center lands on the point after rotation around its origin.
-            page.drawText(t, {
-              ...opts,
-              x: c.x - (tw / 2) * Math.cos(rad) + (th / 2) * Math.sin(rad),
-              y: c.y - (tw / 2) * Math.sin(rad) - (th / 2) * Math.cos(rad),
-              rotate: degrees(rot),
-            });
-          };
-          const vRad = ((+rotation.value || 0) * Math.PI) / 180;
-          const mode = layout.value;
-          if (mode === 'center') draw(width / 2, height / 2);
-          else if (mode === 'top') draw(width / 2, height - s);
-          else if (mode === 'bottom') draw(width / 2, s);
-          else {
-            const stepX = tw * Math.abs(Math.cos(vRad)) + s * 2.5;
-            const stepY = tw * Math.abs(Math.sin(vRad)) + s * 2.5;
-            for (let y = stepY / 2, row = 0; y < height + stepY; y += stepY, row++) {
-              for (let x = (row % 2 ? stepX / 2 : 0) + stepX / 4; x < width + stepX; x += stepX) draw(x, y);
-            }
-          }
-        }
+        await addWatermark(doc, {
+          text: text.value,
+          family: family.value as FontFamily,
+          size: +size.value || 48,
+          color: color.value,
+          opacity: +opacity.value,
+          rotation: +rotation.value || 0,
+          layout: layout.value as WatermarkLayout,
+          pages: pages.value,
+        });
         return [pdfOutput(`${baseName(src.name)}-watermarked`, await doc.save())];
       },
     });

@@ -1,4 +1,19 @@
-import { PDFDocument, EncryptedPDFError, type PDFPage } from '@cantoo/pdf-lib';
+import {
+  PDFDocument,
+  EncryptedPDFError,
+  PDFArray,
+  PDFDict,
+  PDFHexString,
+  PDFName,
+  PDFRef,
+  PDFStream,
+  PDFString,
+  decodePDFRawStream,
+  type PDFImage,
+  type PDFObject,
+  type PDFPage,
+  type PDFRawStream,
+} from '@cantoo/pdf-lib';
 import * as pdfjs from 'pdfjs-dist';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
@@ -249,4 +264,87 @@ export function visualFrame(page: PDFPage) {
     }
   };
   return { width: sideways ? hgt : w, height: sideways ? w : hgt, rotation, toPdf };
+}
+
+/**
+ * Matrix for an annotation appearance drawn upright as the reader sees the
+ * page, on a page with the given /Rotate. Readers map the rotated box onto
+ * the annotation's rectangle, so the box keeps its on-screen width and height.
+ */
+export function uprightMatrix(rotation: 0 | 90 | 180 | 270) {
+  return { 0: [1, 0, 0, 1, 0, 0], 90: [0, 1, -1, 0, 0, 0], 180: [-1, 0, 0, -1, 0, 0], 270: [0, -1, 1, 0, 0, 0] }[rotation];
+}
+
+/** A rectangle given in visual coordinates (top-left origin), as a PDF /Rect. */
+export function visualRect(page: PDFPage, x: number, y: number, w: number, h: number) {
+  const frame = visualFrame(page);
+  const a = frame.toPdf(x, y);
+  const b = frame.toPdf(x + w, y + h);
+  return [Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y)];
+}
+
+/* ---------- low-level object helpers ---------- */
+
+/** Text held in a PDF string, hex string or text stream, or '' for anything else. */
+export function textOf(obj: PDFObject | undefined): string {
+  if (obj instanceof PDFString || obj instanceof PDFHexString) return obj.decodeText();
+  if (obj instanceof PDFStream) {
+    const bytes = decodePDFRawStream(obj as PDFRawStream).decode();
+    if (bytes[0] === 0xfe && bytes[1] === 0xff) return new TextDecoder('utf-16be').decode(bytes.subarray(2));
+    return new TextDecoder('latin1').decode(bytes);
+  }
+  return '';
+}
+
+/**
+ * Replace a page's content with a single picture of it, in place, so links to
+ * the page (bookmarks, the page tree) keep working. The old content, fonts and
+ * annotations are dropped from the page; call pruneUnreachable() before saving
+ * so they are dropped from the file too.
+ */
+export function replacePageWithImage(page: PDFPage, image: PDFImage, width: number, height: number) {
+  const node = page.node;
+  for (const key of ['Annots', 'Contents', 'CropBox', 'BleedBox', 'TrimBox', 'ArtBox', 'Group', 'Thumb', 'PieceInfo', 'Metadata', 'StructParents', 'Tabs', 'AA']) {
+    node.delete(PDFName.of(key));
+  }
+  // Empty but complete: once pdf-lib has normalized a page (removing a form
+  // field does that) it expects these three dictionaries to be there.
+  node.set(PDFName.of('Resources'), node.context.obj({ Font: {}, XObject: {}, ExtGState: {} }));
+  node.set(PDFName.of('MediaBox'), node.context.obj([0, 0, width, height]));
+  node.set(PDFName.of('Rotate'), node.context.obj(0));
+  page.drawImage(image, { x: 0, y: 0, width, height });
+}
+
+/**
+ * pdf-lib writes every object it parsed, even ones nothing points at any more.
+ * After removing content (redaction, flattening), delete what can no longer be
+ * reached from the document so it does not linger inside the saved file.
+ */
+export function pruneUnreachable(doc: PDFDocument) {
+  const ctx = doc.context;
+  const seen = new Set<string>();
+  const stack: (PDFObject | undefined)[] = [ctx.trailerInfo.Root, ctx.trailerInfo.Info, ctx.trailerInfo.Encrypt];
+  while (stack.length) {
+    const obj = stack.pop();
+    if (!obj) continue;
+    if (obj instanceof PDFRef) {
+      if (seen.has(obj.tag)) continue;
+      seen.add(obj.tag);
+      stack.push(ctx.lookup(obj));
+    } else if (obj instanceof PDFDict) {
+      stack.push(...obj.values());
+    } else if (obj instanceof PDFArray) {
+      stack.push(...obj.asArray());
+    } else if (obj instanceof PDFStream) {
+      stack.push(obj.dict);
+    }
+  }
+  let removed = 0;
+  for (const [ref] of ctx.enumerateIndirectObjects()) {
+    if (!seen.has(ref.tag)) {
+      ctx.delete(ref);
+      removed++;
+    }
+  }
+  return removed;
 }

@@ -3,3 +3,4 @@ dist/
 release/
 *.log
 public/pdfjs/
+public/ocr/

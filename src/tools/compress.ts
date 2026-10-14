@@ -1,7 +1,7 @@
 import { Minimize2 } from 'lucide';
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { h, field, select, numberInput, formatBytes } from '../lib/ui';
-import { loadLib, loadJs, rasterizePage, canvasToBlob, pdfOutput, baseName } from '../lib/pdf';
+import { loadLib, loadJs, rasterizePage, canvasToBlob, pdfOutput, baseName, type PdfSource } from '../lib/pdf';
 import { simpleTool, panel, type Tool } from './common';
 
 type Mode = 'lossless' | 'balanced' | 'strong' | 'custom';
@@ -10,6 +10,32 @@ const PRESETS: Record<Exclude<Mode, 'lossless' | 'custom'>, { dpi: number; quali
   balanced: { dpi: 150, quality: 0.72 },
   strong: { dpi: 96, quality: 0.55 },
 };
+
+export type CompressMode = Exclude<Mode, 'custom'> | { dpi: number; quality: number };
+
+/** Compress a PDF and return the new bytes. Shared with guided actions. */
+export async function compressPdf(src: PdfSource, mode: CompressMode, progress: (t: string) => void) {
+  if (mode === 'lossless') {
+    const doc = await loadLib(src);
+    return doc.save({ useObjectStreams: true });
+  }
+  const { dpi: d, quality: q } = typeof mode === 'object' ? mode : PRESETS[mode];
+  const js = await loadJs(src);
+  const doc = await PDFDocument.create();
+  for (let i = 1; i <= js.numPages; i++) {
+    progress(`Compressing page ${i} of ${js.numPages}…`);
+    const page = await js.getPage(i);
+    const vp = page.getViewport({ scale: 1 });
+    const canvas = await rasterizePage(page, d / 72);
+    const jpg = await doc.embedJpg(new Uint8Array(await (await canvasToBlob(canvas, 'image/jpeg', q)).arrayBuffer()));
+    const p = doc.addPage([vp.width, vp.height]);
+    p.drawImage(jpg, { x: 0, y: 0, width: vp.width, height: vp.height });
+    canvas.width = canvas.height = 0;
+    page.cleanup();
+  }
+  await js.loadingTask.destroy();
+  return doc.save({ useObjectStreams: true });
+}
 
 export const compressTool: Tool = {
   id: 'compress',
@@ -48,28 +74,7 @@ export const compressTool: Tool = {
       options: () => panel(field('Compression', mode), custom, explain),
       run: async (src, progress) => {
         const m = mode.value as Mode;
-        let out: Uint8Array;
-        if (m === 'lossless') {
-          const doc = await loadLib(src);
-          out = await doc.save({ useObjectStreams: true });
-        } else {
-          const { dpi: d, quality: q } = m === 'custom' ? { dpi: +dpi.value || 150, quality: (+quality.value || 72) / 100 } : PRESETS[m];
-          const js = await loadJs(src);
-          const doc = await PDFDocument.create();
-          for (let i = 1; i <= js.numPages; i++) {
-            progress(`Compressing page ${i} of ${js.numPages}…`);
-            const page = await js.getPage(i);
-            const vp = page.getViewport({ scale: 1 });
-            const canvas = await rasterizePage(page, d / 72);
-            const jpg = await doc.embedJpg(new Uint8Array(await (await canvasToBlob(canvas, 'image/jpeg', q)).arrayBuffer()));
-            const p = doc.addPage([vp.width, vp.height]);
-            p.drawImage(jpg, { x: 0, y: 0, width: vp.width, height: vp.height });
-            canvas.width = canvas.height = 0;
-            page.cleanup();
-          }
-          await js.loadingTask.destroy();
-          out = await doc.save({ useObjectStreams: true });
-        }
+        const out = await compressPdf(src, m === 'custom' ? { dpi: +dpi.value || 150, quality: (+quality.value || 72) / 100 } : m, progress);
         const before = src.bytes.byteLength;
         const after = out.byteLength;
         const pct = Math.round((1 - after / before) * 100);
