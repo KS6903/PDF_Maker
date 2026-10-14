@@ -26,27 +26,15 @@ function entryIcon(e: CatalogEntry, size = 22) {
   return h('span', { class: 'tool-icon', style: `--c:${e.color}` }, icon(e.icon, size));
 }
 
-function blurbFor(e: CatalogEntry, tools: Tool[]) {
-  return e.note ?? tools.find((t) => t.id === e.tool)?.blurb ?? '';
-}
-
 function entryCard(e: CatalogEntry, tools: Tool[], large = false) {
-  const target = entryHash(e);
-  const body = [
+  return h(
+    'a',
+    { class: `tool-card${large ? ' large' : ''}`, href: entryHash(e) ?? '#/', 'data-search': e.label.toLowerCase() },
     entryIcon(e, large ? 24 : 20),
     h('strong', null, e.label),
-    h('span', { class: 'tool-blurb' }, blurbFor(e, tools)),
-    large && target ? h('span', { class: 'use-now' }, 'Use now', icon(ArrowRight, 14)) : null,
-  ];
-  if (!target) {
-    return h(
-      'button',
-      { type: 'button', class: `tool-card not-ready ${e.status}`, title: e.note ?? '', onclick: () => toast(e.note ?? 'This tool is not available.', 'info') },
-      body,
-      h('span', { class: 'panel-badge' }, e.status === 'planned' ? 'Soon' : 'n/a'),
-    );
-  }
-  return h('a', { class: `tool-card${large ? ' large' : ''}`, href: target, 'data-search': e.label.toLowerCase() }, body);
+    h('span', { class: 'tool-blurb' }, tools.find((t) => t.id === e.tool)?.blurb ?? ''),
+    large ? h('span', { class: 'use-now' }, 'Use now', icon(ArrowRight, 14)) : null,
+  );
 }
 
 export async function openInEditor(ctx: AppContext, file: File | { name: string; bytes: Uint8Array }) {
@@ -167,26 +155,11 @@ export function renderHome(ctx: AppContext, tools: Tool[]) {
 }
 
 export function renderAllTools(tools: Tool[]) {
-  const sections: [string, string, CatalogEntry[]][] = [
-    ['Tools', '', CATALOG.filter((e) => !!e.tool)],
-    ['Coming soon', 'Planned, and possible to do offline. Not built yet.', CATALOG.filter((e) => e.status === 'planned')],
-    ['Not supported', 'These need a service, a signing store or a prepress engine that this app deliberately does without.', CATALOG.filter((e) => e.status === 'unavailable')],
-  ];
   return h(
     'div',
     { class: 'home' },
     h('header', { class: 'home-head' }, h('h1', null, 'All tools')),
-    sections
-      .filter(([, , list]) => list.length)
-      .map(([title, blurb, list]) =>
-        h(
-          'section',
-          { class: 'tool-section' },
-          h('h2', null, title),
-          blurb ? h('p', { class: 'muted' }, blurb) : null,
-          h('div', { class: 'tool-grid' }, list.map((e) => entryCard(e, tools))),
-        ),
-      ),
+    h('section', { class: 'tool-section' }, h('div', { class: 'tool-grid' }, CATALOG.map((e) => entryCard(e, tools)))),
   );
 }
 

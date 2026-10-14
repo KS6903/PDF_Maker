@@ -21,17 +21,30 @@ Save dialog. Nothing is ever uploaded. This is enforced, not just promised:
 | | **Fill forms** | Fill text fields, checkboxes, dropdowns and radio buttons; optionally flatten. |
 | | **Watermark** | Text watermark, centered, tiled, top or bottom, with color, opacity and angle. |
 | | **Page numbers & headers** | "Page 1 of 10" style numbers or any header/footer text, six positions. |
+| | **Redact a PDF** | Drag boxes or find words, email addresses and phone numbers, then black them out. Redacted pages are flattened and everything unreachable is pruned, so the text is gone from the file, not just covered. Optional OCR makes those pages searchable again. |
+| | **Measure objects** | Distance, perimeter and area at any scale (e.g. 1 in = 10 ft), with a "set scale" from a known length. Measurements can be saved onto the page. |
+| | **Use a certificate** | Sign with a digital ID: load a `.pfx`/`.p12` or create a self-signed one. Signatures are PKCS#7, added as an incremental update so earlier signatures stay valid, with an optional visible box. Existing signatures are checked for changes since signing. |
+| | **Add rich media** | Embed a video, sound or any file on a page, shown with a poster frame; it opens in the computer's own player. Lists and saves files already attached. |
 | Organize | **Organize pages** | Drag to reorder, rotate, delete, duplicate, insert blank pages, append another PDF. |
 | | **Merge PDFs** | Combine files in any order, with optional page ranges per file. |
 | | **Split & extract** | Extract pages, split by ranges, every N pages, or one file per page. |
 | | **Compress** | Lossless restructuring, or re-render pages as optimized images for big savings. |
+| | **Compare files** | Line and word changes between two versions, plus a page-by-page visual diff, with a report PDF that highlights what changed. |
+| | **Use guided actions** | Chain steps (OCR, watermark, page numbers, rotate, flatten forms, remove scripts or metadata, PDF/A, compress, password) and run them over a batch of files. Save your own actions. |
+| | **Add search index** | Index many PDFs (optionally OCR-ing scans) and search them all at once; click a hit to open the file. Kept on this computer. |
+| | **Create custom tool** | Put the tools you use most in a toolbar tab of your own. |
 | Convert | **Create PDF** | Write in Markdown/plain text/HTML with live preview, or import **Word (.docx)**, HTML, Markdown or text files. |
 | | **Images → PDF** | JPG, PNG, WebP, GIF, BMP, SVG → PDF with page size, orientation, margins, fit/fill. |
 | | **PDF → Images** | PNG, JPG or WebP at 72-600 DPI. |
 | | **PDF → Text & Word** | Extract text to `.txt` or an editable `.docx`. |
+| | **Scan & OCR** | Recognise text on scanned pages (English, on this computer) and lay it invisibly over the scan, so it can be searched and copied. |
+| | **Apply PDF standards** | Convert to PDF/A-2b for archiving: embeds an sRGB output intent and matching XMP metadata, removes scripts and attachments, and flattens only the pages that can't comply (fonts not embedded, CMYK). |
+| | **Use print production** | Crop and registration marks, colour bars, page information and bleed, with trim and bleed boxes set; approximate separations preview. |
 | Secure & info | **Protect with password** | AES-256 encryption with print/copy/edit permissions. |
 | | **Remove password** | Save an unlocked copy of a PDF you have the password for. |
 | | **Properties & metadata** | View page sizes and details; edit or strip title, author, keywords, etc. |
+| | **Prepare for accessibility** | Checks title, language, scanned pages, field labels, tab order, bookmarks and tagging, and fixes what can be fixed in place. |
+| | **Use JavaScript** | See, edit, add or remove the scripts in a PDF. Folio never runs them. |
 
 Every result has a **Continue with…** menu so you can chain tools (e.g. merge → compress → protect).
 The home screen lists recommended tools and recently opened files, and the top bar has a tool
@@ -141,7 +154,9 @@ npm run build      # typecheck + production build into dist/
 Built with TypeScript + Vite, [pdf-lib](https://github.com/cantoo-scribe/pdf-lib) (writing and
 encryption), [pdf.js](https://mozilla.github.io/pdf.js/) (rendering and text extraction),
 [mammoth](https://github.com/mwilliamson/mammoth.js) (Word import), [docx](https://docx.js.org)
-(Word export) and Electron for the desktop app.
+(Word export), [Tesseract.js](https://tesseract.projectnaptha.com/) (OCR, bundled with its English
+model), [node-forge](https://github.com/digitalbazaar/forge) (certificate signing) and Electron for the
+desktop app.
 
 ## Limitations
 
@@ -150,5 +165,10 @@ encryption), [pdf.js](https://mozilla.github.io/pdf.js/) (rendering and text ext
   existing text in your PDFs is always preserved.
 - "Edit existing text" covers the original with white-out and places new text on top, it does
   not rewrite the PDF's internal text.
-- Scanned PDFs are images, so text extraction returns nothing for them (no OCR).
+- Scanned PDFs are images, so text extraction returns nothing for them until you run **Scan & OCR**
+  (English only).
+- PDF/A conversion makes pages that can't comply into images, so their text is no longer selectable.
+- Certificate signing reads `.pfx`/`.p12` files; it doesn't reach into the Windows certificate store,
+  and it checks signatures for tampering but not against certificate authorities.
+- The separations preview is worked out from screen colours, not from a colour profile.
 - Word import keeps text, headings, lists, tables and images, but not exact page layout.

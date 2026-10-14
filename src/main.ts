@@ -20,10 +20,11 @@ import {
   Sun,
   X,
 } from 'lucide';
-import { h, icon, button, toast, confirmDiscard } from './lib/ui';
+import { h, icon, button, confirmDiscard } from './lib/ui';
 import { unsavedNames } from './lib/unsaved';
 import { initTheme, getTheme, setTheme, type ThemeMode } from './lib/theme';
 import { CATALOG, RIBBON, byLabel, entryHash, type CatalogEntry } from './lib/catalog';
+import { getCustomTab, CUSTOM_TAB_EVENT } from './lib/customtools';
 import type { PdfSource } from './lib/pdf';
 import type { AppContext, Tool } from './tools/common';
 import { renderHome, renderAllTools, openInEditor, setShellIntegration } from './home';
@@ -40,6 +41,19 @@ import { imagesToPdfTool, pdfToImagesTool } from './tools/images';
 import { extractTool } from './tools/extract';
 import { protectTool, unlockTool } from './tools/protect';
 import { metadataTool } from './tools/metadata';
+import { ocrTool } from './tools/ocr';
+import { redactTool } from './tools/redact';
+import { measureTool } from './tools/measure';
+import { compareTool } from './tools/compare';
+import { actionsTool } from './tools/actions';
+import { accessibilityTool } from './tools/accessibility';
+import { customTool } from './tools/customtool';
+import { certificateTool } from './tools/certificate';
+import { printProductionTool } from './tools/printprod';
+import { richMediaTool } from './tools/richmedia';
+import { standardsTool } from './tools/standards';
+import { searchIndexTool } from './tools/searchindex';
+import { javascriptTool } from './tools/javascript';
 
 initTheme();
 
@@ -59,6 +73,19 @@ const TOOLS: Tool[] = [
   protectTool,
   unlockTool,
   metadataTool,
+  ocrTool,
+  redactTool,
+  measureTool,
+  compareTool,
+  actionsTool,
+  accessibilityTool,
+  customTool,
+  certificateTool,
+  printProductionTool,
+  richMediaTool,
+  standardsTool,
+  searchIndexTool,
+  javascriptTool,
 ];
 
 let incoming: PdfSource | undefined;
@@ -299,26 +326,42 @@ document.addEventListener('keydown', (e) => {
 });
 
 let ribbonTab = 'tools';
-const ribbonTabs = RIBBON.map((t) =>
-  h(
-    'button',
-    {
-      type: 'button',
-      class: 'ribbon-tab',
-      'data-ribbon': t.id,
-      onclick: () => {
-        ribbonTab = t.id;
-        paintRibbon();
-        setPanelOpen(true);
-      },
-    },
-    t.label,
-  ),
-);
+/** The built-in tabs, plus the one made with "Create custom tool". */
+function ribbonList() {
+  const custom = getCustomTab();
+  return custom ? [...RIBBON, { id: 'custom', label: custom.name, entries: custom.labels }] : RIBBON;
+}
+const ribbonTabs = h('div', { class: 'ribbon-tabs' });
+function paintRibbonTabs() {
+  ribbonTabs.replaceChildren(
+    ...ribbonList().map((t) =>
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'ribbon-tab',
+          'data-ribbon': t.id,
+          onclick: () => {
+            ribbonTab = t.id;
+            paintRibbon();
+            setPanelOpen(true);
+          },
+        },
+        t.label,
+      ),
+    ),
+  );
+}
 function paintRibbon() {
-  for (const b of ribbonTabs) b.classList.toggle('active', b.dataset.ribbon === ribbonTab);
+  for (const b of ribbonTabs.querySelectorAll<HTMLElement>('.ribbon-tab')) b.classList.toggle('active', b.dataset.ribbon === ribbonTab);
   renderPanel();
 }
+window.addEventListener(CUSTOM_TAB_EVENT, () => {
+  if (!ribbonList().some((t) => t.id === ribbonTab)) ribbonTab = 'tools';
+  paintRibbonTabs();
+  paintRibbon();
+});
+paintRibbonTabs();
 
 const panelToggle = h(
   'button',
@@ -330,7 +373,7 @@ const ribbon = h(
   'nav',
   { class: 'ribbon', 'aria-label': 'Tool groups' },
   panelToggle,
-  h('div', { class: 'ribbon-tabs' }, ribbonTabs),
+  ribbonTabs,
   h('span', { class: 'spacer' }),
   h('div', { class: 'search' }, icon(Search, 16), searchInput, h('kbd', null, 'Ctrl K'), searchResults),
   updatePill,
@@ -365,22 +408,8 @@ function entryIcon(e: CatalogEntry, size = 20) {
 }
 
 function entryRow(e: CatalogEntry) {
-  const target = entryHash(e);
+  const target = entryHash(e) ?? '#/';
   const current = location.hash.replace(/^#\/?/, '');
-  if (!target) {
-    return h(
-      'button',
-      {
-        type: 'button',
-        class: `panel-item not-ready ${e.status}`,
-        title: e.note ?? '',
-        onclick: () => toast(e.note ?? 'This tool is not available.', 'info'),
-      },
-      entryIcon(e),
-      h('span', { class: 'panel-label' }, e.label),
-      h('span', { class: 'panel-badge' }, e.status === 'planned' ? 'Soon' : 'n/a'),
-    );
-  }
   return h(
     'a',
     { class: `panel-item${target === `#/${current}` ? ' active' : ''}`, href: target },
@@ -390,7 +419,7 @@ function entryRow(e: CatalogEntry) {
 }
 
 function renderPanel() {
-  const tab = RIBBON.find((t) => t.id === ribbonTab);
+  const tab = ribbonList().find((t) => t.id === ribbonTab);
   if (tab && tab.entries.length) {
     panelList.replaceChildren(...tab.entries.map((label) => byLabel.get(label)).filter((e): e is CatalogEntry => !!e).map(entryRow));
     return;
