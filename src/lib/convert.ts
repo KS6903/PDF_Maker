@@ -17,6 +17,9 @@ export type Part =
   | { name: string; label: string; kind: 'images'; images: PageImage[] }
   | { name: string; label: string; kind: 'pdf'; src: PdfSource };
 
+/** A Part before its file name is filled in. Spread over the union so each kind keeps its own fields. */
+type PartBody = Part extends infer P ? (P extends Part ? Omit<P, 'name'> : never) : never;
+
 /** What the converter takes, for the help text. */
 export const FORMAT_GROUPS: [string, string][] = [
   ['Documents', 'Word (.docx), OpenDocument (.odt), RTF, HTML, Markdown, plain text'],
@@ -676,7 +679,7 @@ export async function convertFile(file: File): Promise<{ part: Part; notes: stri
   const name = file.name;
   const e = ext(name);
   const notes: string[] = [];
-  const done = (part: Omit<Part, 'name'>) => ({ part: { ...part, name } as Part, notes });
+  const done = (part: PartBody) => ({ part: { ...part, name } as Part, notes });
 
   if (!bytes.length) throw new ConvertError(`“${name}” is empty.`);
   if (String.fromCharCode(...bytes.subarray(0, 1024)).includes('%PDF-')) {

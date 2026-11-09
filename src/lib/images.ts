@@ -110,7 +110,7 @@ function viaTiff(bytes: Uint8Array): Promise<PageImage[]> {
       UTIF.decodeImage(buf, ifd);
       const rgba = UTIF.toRGBA8(ifd);
       const c = canvasOf(ifd.width, ifd.height);
-      c.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer, 0, ifd.width * ifd.height * 4), ifd.width, ifd.height), 0, 0);
+      c.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer as ArrayBuffer, rgba.byteOffset, ifd.width * ifd.height * 4), ifd.width, ifd.height), 0, 0);
       return canvasToImage(c, true);
     }),
   );
