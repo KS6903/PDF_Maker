@@ -4,3 +4,4 @@ release/
 *.log
 public/pdfjs/
 public/ocr/
+public/heic/
