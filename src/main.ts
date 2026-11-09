@@ -6,6 +6,7 @@ import {
   CircleArrowUp,
   CircleCheck,
   Download,
+  FileText,
   FolderOpen,
   House,
   LoaderCircle,
@@ -16,18 +17,20 @@ import {
   Plus,
   Printer,
   RefreshCw,
+  Save,
   Search,
   Sun,
   X,
 } from 'lucide';
-import { h, icon, button, confirmDiscard } from './lib/ui';
+import { h, icon, button, confirmDiscard, withBusy, toast } from './lib/ui';
 import { unsavedNames } from './lib/unsaved';
 import { initTheme, getTheme, setTheme, type ThemeMode } from './lib/theme';
 import { CATALOG, RIBBON, byLabel, entryHash, type CatalogEntry } from './lib/catalog';
 import { getCustomTab, CUSTOM_TAB_EVENT } from './lib/customtools';
-import type { PdfSource } from './lib/pdf';
+import { openPdf, download, pdfOutput, baseName, loadJs, renderPage, type PdfSource } from './lib/pdf';
+import { activeDoc, closeDocument, currentSource, getDoc, listDocs, onDocsChange, openDocument, setActive, setDirty } from './lib/documents';
 import type { AppContext, Tool } from './tools/common';
-import { renderHome, renderAllTools, openInEditor, setShellIntegration } from './home';
+import { renderHome, renderAllTools, setShellIntegration } from './home';
 import { editorTool } from './tools/editor';
 import { formsTool } from './tools/forms';
 import { watermarkTool } from './tools/watermark';
@@ -91,13 +94,24 @@ const TOOLS: Tool[] = [
 let incoming: PdfSource | undefined;
 let incomingFiles: File[] | undefined;
 let cleanup: (() => void) | void;
+/** The open tab the current tool works on, and its version, so switching tabs refreshes the tool. */
+let bound: { id: string; version: number } | null = null;
 
 const ctx: AppContext = {
   tools: TOOLS,
   openTool(id, file) {
-    incoming = file;
+    // A handed-over PDF becomes an open tab, which the tool then picks up.
+    if (file?.pageCount) openDocument(file);
+    else incoming = file;
     if (location.hash === `#/${id}`) route();
     else location.hash = `#/${id}`;
+  },
+  bindDoc(id) {
+    const d = getDoc(id);
+    bound = d ? { id: d.id, version: d.version } : null;
+  },
+  boundDoc() {
+    return bound?.id ?? null;
   },
   takeIncoming() {
     const f = incoming;
@@ -118,13 +132,75 @@ const ctx: AppContext = {
 const openInput = h('input', {
   type: 'file',
   accept: 'application/pdf,.pdf',
+  multiple: true,
   hidden: true,
   onchange: () => {
-    const f = openInput.files?.[0];
+    const files = [...(openInput.files ?? [])];
     openInput.value = '';
-    if (f) void openInEditor(ctx, f);
+    void openFiles(files);
   },
 }) as HTMLInputElement;
+
+/**
+ * Open PDFs in tabs. A tool that works on one file just switches to the new
+ * one; anywhere else the file opens in the editor.
+ */
+async function openFiles(files: File[]) {
+  let opened = false;
+  for (const f of files) {
+    const src = await withBusy('Opening PDF…', () => openPdf(f));
+    if (src) {
+      openDocument(src);
+      opened = true;
+    }
+  }
+  if (opened && !bound && currentId() !== 'editor') location.hash = '#/editor';
+}
+
+function currentId() {
+  return location.hash.replace(/^#\/?/, '');
+}
+
+/** Save the active tab to disk, with everything done to it so far. */
+async function saveActive() {
+  const d = activeDoc();
+  if (!d) return toast('Open a PDF first.');
+  const src = await withBusy('Saving PDF…', () => currentSource(d.id));
+  if (!src) return;
+  download(pdfOutput(baseName(d.src.name), src.bytes));
+  setDirty(d.id, false);
+}
+
+/** Print the active tab's pages (not the app window). */
+async function printActive() {
+  const d = activeDoc();
+  if (!d) return toast('Open a PDF first.');
+  const root = h('div', { class: 'print-root' });
+  const ok = await withBusy('Preparing to print…', async (progress) => {
+    const src = await currentSource(d.id);
+    if (!src) return false;
+    const js = await loadJs(src);
+    try {
+      for (let i = 1; i <= js.numPages; i++) {
+        progress(`Preparing page ${i} of ${js.numPages}…`);
+        const canvas = await renderPage(await js.getPage(i), 2);
+        const img = h('img', { src: canvas.toDataURL('image/jpeg', 0.92), alt: '' }) as HTMLImageElement;
+        root.append(img);
+        await img.decode().catch(() => undefined);
+      }
+    } finally {
+      await js.loadingTask.destroy();
+    }
+    return true;
+  });
+  if (!ok) return;
+  document.body.append(root);
+  const done = () => root.remove();
+  window.addEventListener('afterprint', done, { once: true });
+  window.print();
+  // Not every shell fires afterprint, so clear up regardless.
+  setTimeout(done, 60_000);
+}
 
 /* ---------- app bar: menu, home, document tabs, create ---------- */
 const menuPanel = h('div', { class: 'menu-panel', hidden: true, role: 'menu' });
@@ -242,7 +318,7 @@ menuPanel.append(
   updateAction,
 );
 
-const docTabs = h('div', { class: 'doc-tabs', role: 'tablist', 'aria-label': 'Open documents' });
+const docTabs = h('div', { class: 'doc-tabs', role: 'tablist', 'aria-label': 'Open files' });
 
 const appbar = h(
   'header',
@@ -250,10 +326,78 @@ const appbar = h(
   h('div', { class: 'menu-wrap' }, menuBtn, menuPanel),
   h('a', { class: 'appbar-btn icon-only', href: '#/', title: 'Home', 'aria-label': 'Home' }, icon(House, 18)),
   docTabs,
-  h('a', { class: 'tab-add', href: '#/create', title: 'Create a PDF' }, icon(Plus, 16), h('span', null, 'Create')),
+  h('button', { type: 'button', class: 'tab-add', title: 'Open a PDF in a new tab (Ctrl+O)', onclick: () => openInput.click() }, icon(Plus, 16), h('span', null, 'Open')),
   h('span', { class: 'spacer' }),
   openInput,
 );
+
+/**
+ * Clicking a tab makes it the file you're working on. A tool that works on one
+ * file switches to it in place; clicking the tab that's already active, or a
+ * tab from anywhere else, opens the file in the editor.
+ */
+function pickTab(id: string) {
+  const wasActive = activeDoc()?.id === id;
+  setActive(id);
+  if (currentId() !== 'editor' && (wasActive || !bound)) location.hash = '#/editor';
+}
+
+function renderDocTabs() {
+  const docs = listDocs();
+  const act = activeDoc();
+  const onEditor = currentId() === 'editor';
+  docTabs.replaceChildren(
+    ...docs.map((d) =>
+      h(
+        'div',
+        {
+          class: `doc-tab file${d.id === act?.id ? ' active' : ''}`,
+          role: 'tab',
+          tabindex: 0,
+          'aria-selected': String(d.id === act?.id),
+          title: d.id === act?.id && !onEditor ? `${d.src.name}. Tools work on this file. Click to edit it.` : d.src.name,
+          onclick: () => pickTab(d.id),
+          onkeydown: (e: KeyboardEvent) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              pickTab(d.id);
+            }
+          },
+          onauxclick: (e: MouseEvent) => e.button === 1 && void closeDocument(d.id),
+        },
+        icon(FileText, 14),
+        h('span', { class: 'doc-tab-name' }, d.src.name),
+        d.dirty ? h('span', { class: 'doc-tab-dot', title: 'Unsaved changes' }) : null,
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'doc-tab-close',
+            title: 'Close',
+            'aria-label': `Close ${d.src.name}`,
+            onclick: (e: MouseEvent) => {
+              e.stopPropagation();
+              void closeDocument(d.id);
+            },
+          },
+          icon(X, 13),
+        ),
+      ),
+    ),
+  );
+  if (!docs.length) docTabs.append(h('span', { class: 'doc-tabs-empty' }, 'No file open'));
+  saveBtn.disabled = printBtn.disabled = !act;
+}
+
+let lastActive: string | null = null;
+onDocsChange(() => {
+  renderDocTabs();
+  const act = activeDoc();
+  const changed = act?.id !== lastActive;
+  lastActive = act?.id ?? null;
+  // A tool working on a tab follows it: another tab picked, or a result applied to this one.
+  if (bound && currentId() !== 'editor' && (changed || getDoc(bound.id)?.version !== bound.version)) route();
+});
 
 /* ---------- ribbon: tool tabs and the find box ---------- */
 const searchInput = h('input', {
@@ -319,9 +463,20 @@ searchInput.addEventListener('keydown', (e) => {
   }
 });
 document.addEventListener('keydown', (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'k') {
     e.preventDefault();
     searchInput.focus();
+  } else if (k === 's') {
+    e.preventDefault();
+    void saveActive();
+  } else if (k === 'o') {
+    e.preventDefault();
+    openInput.click();
+  } else if (k === 'p') {
+    e.preventDefault();
+    void printActive();
   }
 });
 
@@ -332,6 +487,8 @@ function ribbonList() {
   return custom ? [...RIBBON, { id: 'custom', label: custom.name, entries: custom.labels }] : RIBBON;
 }
 const ribbonTabs = h('div', { class: 'ribbon-tabs' });
+const printBtn = button(null, () => void printActive(), { icon: Printer, kind: 'ghost', title: 'Print the open file (Ctrl+P)' });
+const saveBtn = button('Save', () => void saveActive(), { icon: Save, kind: 'primary', title: 'Save the open file with all your changes (Ctrl+S)' });
 function paintRibbonTabs() {
   ribbonTabs.replaceChildren(
     ...ribbonList().map((t) =>
@@ -377,12 +534,13 @@ const ribbon = h(
   h('span', { class: 'spacer' }),
   h('div', { class: 'search' }, icon(Search, 16), searchInput, h('kbd', null, 'Ctrl K'), searchResults),
   updatePill,
-  button(null, () => window.print(), { icon: Printer, kind: 'ghost', title: 'Print' }),
-  button('Open file', () => openInput.click(), { icon: FolderOpen, kind: 'primary' }),
+  printBtn,
+  saveBtn,
 );
 
 /* ---------- left panel: All tools ---------- */
 const panelList = h('div', { class: 'panel-list' });
+const panelTitle = h('h2', null, 'All tools');
 let showMore = false;
 const moreBtn = h('button', { type: 'button', class: 'view-more', onclick: () => ((showMore = !showMore), renderPanel()) });
 
@@ -392,7 +550,7 @@ const panel = h(
   h(
     'div',
     { class: 'panel-head' },
-    h('h2', null, 'All tools'),
+    panelTitle,
     h('button', { type: 'button', class: 'panel-close', title: 'Close', 'aria-label': 'Close the tools panel', onclick: () => setPanelOpen(false) }, icon(X, 16)),
   ),
   panelList,
@@ -420,6 +578,7 @@ function entryRow(e: CatalogEntry) {
 
 function renderPanel() {
   const tab = ribbonList().find((t) => t.id === ribbonTab);
+  panelTitle.textContent = tab?.label ?? 'All tools';
   if (tab && tab.entries.length) {
     panelList.replaceChildren(...tab.entries.map((label) => byLabel.get(label)).filter((e): e is CatalogEntry => !!e).map(entryRow));
     return;
@@ -436,23 +595,42 @@ document.getElementById('app')!.append(appbar, ribbon, workarea);
 setPanelOpen(true);
 paintRibbon();
 
+/** Tools mounted once and kept, like the editor, so their state survives a visit elsewhere. */
+const kept = new Map<string, HTMLElement>();
+let shown: HTMLElement | null = null;
+
 function route() {
   if (typeof cleanup === 'function') cleanup();
   cleanup = undefined;
+  bound = null;
   toggleMenu(false);
-  const id = location.hash.replace(/^#\/?/, '');
+  const id = currentId();
   const tool = TOOLS.find((t) => t.id === id);
   // Guard on `tool`, otherwise this matches the first entry that has no tool at all.
   const entry = tool ? CATALOG.find((e) => e.tool === tool.id) : undefined;
   const label = entry?.label ?? tool?.title;
   renderPanel();
+  if (shown && shown !== kept.get(id)) shown.dispatchEvent(new Event('tool-hide'));
+  shown = null;
   main.replaceChildren();
   main.className = tool?.wide ? 'wide' : '';
   document.title = label ? `${label} · Folio` : id === 'tools' ? 'All tools · Folio' : 'Folio';
-  renderDocTabs(label ?? (id === 'tools' ? 'All tools' : 'Home'));
+  renderDocTabs();
   if (!tool) {
     incoming = undefined;
     main.append(id === 'tools' ? renderAllTools(TOOLS) : renderHome(ctx, TOOLS));
+  } else if (tool.keepAlive) {
+    let body = kept.get(tool.id);
+    const fresh = !body;
+    body ??= h('div', { class: 'tool-content' });
+    main.append(body);
+    if (fresh) {
+      kept.set(tool.id, body);
+      tool.mount(body, ctx);
+    } else {
+      body.dispatchEvent(new Event('tool-show'));
+    }
+    shown = body;
   } else {
     const body = h('div', { class: 'tool-content' });
     if (!tool.wide) {
@@ -471,10 +649,6 @@ function route() {
   main.scrollTop = 0;
 }
 
-/** The app bar tab strip. The editor manages its own document tabs inside its view. */
-function renderDocTabs(label: string) {
-  docTabs.replaceChildren(h('span', { class: 'doc-tab active' }, h('span', { class: 'doc-tab-name' }, label)));
-}
 
 /* ---------- desktop app: PDFs opened via "Open with Folio" ---------- */
 interface DesktopFile {
@@ -513,6 +687,13 @@ const PDF_RE = /\.pdf$/i;
 function handleLaunch(payload: LaunchPayload | null) {
   if (!payload?.files.length) return;
   const files = payload.files.map((f) => new File([new Uint8Array(f.data) as unknown as BlobPart], f.name, { type: PDF_RE.test(f.name) ? 'application/pdf' : '' }));
+  // PDFs to edit open straight into tabs.
+  if ((payload.mode === 'edit' || payload.mode === null) && files.every((f) => PDF_RE.test(f.name))) {
+    void openFiles(files).then(() => {
+      if (currentId() !== 'editor') location.hash = '#/editor';
+    });
+    return;
+  }
   const tool =
     payload.mode === 'merge' ? 'merge'
     : payload.mode === 'compress' ? 'compress'
@@ -645,7 +826,7 @@ window.addEventListener('dragover', (e) => e.preventDefault());
 window.addEventListener('drop', (e) => {
   if (e.defaultPrevented) return; // a drop zone already handled it
   e.preventDefault();
-  const file = [...(e.dataTransfer?.files ?? [])].find((f) => /\.pdf$/i.test(f.name) || f.type === 'application/pdf');
-  if (file && !TOOLS.find((t) => t.wide && location.hash === `#/${t.id}`)) void openInEditor(ctx, file);
+  const files = [...(e.dataTransfer?.files ?? [])].filter((f) => /\.pdf$/i.test(f.name) || f.type === 'application/pdf');
+  if (files.length && !TOOLS.find((t) => t.wide && location.hash === `#/${t.id}`)) void openFiles(files);
 });
 route();

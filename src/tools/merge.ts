@@ -2,6 +2,7 @@ import { Combine, ChevronUp, ChevronDown, X, FilePlus } from 'lucide';
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { h, button, dropzone, withBusy, textInput, toast } from '../lib/ui';
 import { openPdf, loadLib, loadJs, thumbnail, parseRanges, pdfOutput, type PdfSource } from '../lib/pdf';
+import { activeDoc, currentSource } from '../lib/documents';
 import { resultsPanel, type Tool } from './common';
 
 interface Item {
@@ -100,5 +101,13 @@ export const mergeTool: Tool = {
     const incoming = ctx.takeIncoming();
     if (handed?.length) void add(handed);
     else if (incoming) void add([incoming]);
+    else {
+      // Start with the open file, so combining means adding others to it.
+      const open = activeDoc();
+      if (open) {
+        ctx.bindDoc(open.id);
+        void currentSource(open.id).then((s) => s && add([s]));
+      }
+    }
   },
 };

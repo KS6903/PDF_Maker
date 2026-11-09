@@ -3,6 +3,8 @@
  * computer's local storage.
  */
 
+import { RENAMED } from './catalog';
+
 export interface CustomTab {
   name: string;
   /** Catalog labels, in the order they appear. */
@@ -15,7 +17,9 @@ export const CUSTOM_TAB_EVENT = 'folio:custom-tab';
 export function getCustomTab(): CustomTab | null {
   try {
     const v = JSON.parse(localStorage.getItem(KEY) ?? 'null') as CustomTab | null;
-    return v && typeof v.name === 'string' && Array.isArray(v.labels) && v.labels.length ? v : null;
+    if (!v || typeof v.name !== 'string' || !Array.isArray(v.labels) || !v.labels.length) return null;
+    // Renamed tools keep their place; two old names for one tool become one entry.
+    return { name: v.name, labels: [...new Set(v.labels.map((l) => RENAMED[l] ?? l))] };
   } catch {
     return null;
   }

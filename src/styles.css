@@ -825,11 +825,9 @@ select[multiple] {
   margin: 0 auto;
   padding: 36px 44px;
 }
-.ed-intro::before {
-  content: 'Edit & sign';
-  display: block;
+.ed-intro-title {
   font: 650 24px var(--font-display);
-  margin-bottom: 20px;
+  margin: 0 0 20px;
 }
 .ed-workspace {
   display: flex;
@@ -1113,19 +1111,8 @@ select[multiple] {
 .ed-workspace:not([data-tool='select']):not([data-tool='text']):not([data-tool='edittext']) .ed-layer {
   cursor: crosshair;
 }
-.ed-results {
-  position: absolute;
-  right: 20px;
-  bottom: 20px;
-  width: min(560px, calc(100% - 40px));
-  z-index: 6;
-}
 main.wide .tool-content {
   position: relative;
-}
-.ed-results .results {
-  box-shadow: var(--shadow-lg);
-  background: var(--surface);
 }
 
 .ann {
@@ -1139,6 +1126,8 @@ main.wide .tool-content {
   outline: none;
 }
 .ann-text.editing {
+  /* Stays first in the layer while typing, so lift it over boxes drawn after it. */
+  z-index: 3;
   outline: 1px dashed var(--focus);
   outline-offset: 2px;
   background: rgb(255 255 255 / 0.4);
@@ -1636,6 +1625,79 @@ main.wide .tool-content {
 .doc-tab-name {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* Open files: a tab per PDF, there whichever tool is showing. */
+.doc-tab.file {
+  gap: 7px;
+  padding: 0 4px 0 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.doc-tab.file:hover:not(.active) {
+  background: color-mix(in srgb, var(--sunken) 60%, transparent);
+  color: var(--text);
+}
+.doc-tab.file:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.doc-tab.file > svg {
+  flex: none;
+  color: var(--accent);
+}
+.doc-tab-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.doc-tab-close {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+}
+.doc-tab-close:hover {
+  background: var(--sunken);
+  opacity: 1;
+}
+.doc-tabs-empty {
+  align-self: center;
+  padding: 0 8px;
+  font-size: 12.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+/* Printing shows the open file's pages, not the app around them. */
+.print-root {
+  display: none;
+}
+@media print {
+  @page {
+    margin: 0;
+  }
+  body > :not(.print-root) {
+    display: none !important;
+  }
+  body {
+    background: #fff !important;
+  }
+  .print-root {
+    display: block;
+  }
+  .print-root img {
+    display: block;
+    width: 100%;
+    break-after: page;
+  }
 }
 .tab-add {
   display: inline-flex;
@@ -2501,92 +2563,6 @@ main.wide .tool-content {
 }
 .ed-hint .suggest-btn {
   height: 28px;
-}
-
-/* ---------- editor document tabs ---------- */
-.ed-tabs {
-  display: flex;
-  align-items: stretch;
-  gap: 2px;
-  padding: 6px 8px 0;
-  background: var(--surface-2);
-  border-bottom: 1px solid var(--border);
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.ed-tab {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  max-width: 230px;
-  padding: 7px 6px 7px 12px;
-  border: 1px solid transparent;
-  border-bottom: 0;
-  border-radius: 8px 8px 0 0;
-  color: var(--muted);
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-}
-.ed-tab:hover {
-  background: color-mix(in srgb, var(--sunken) 60%, transparent);
-  color: var(--text);
-}
-.ed-tab.active {
-  background: var(--surface);
-  border-color: var(--border);
-  color: var(--text);
-  font-weight: 600;
-  margin-bottom: -1px;
-  padding-bottom: 8px;
-}
-.ed-tab svg {
-  color: var(--accent);
-  flex: none;
-}
-.ed-tab-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.ed-tab-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  flex: none;
-}
-.ed-tab-close {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border: 0;
-  border-radius: 5px;
-  background: none;
-  color: inherit;
-  cursor: pointer;
-  opacity: 0.55;
-  flex: none;
-}
-.ed-tab-close:hover {
-  background: var(--sunken);
-  opacity: 1;
-}
-.ed-tab-add {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  margin: 0 0 4px 4px;
-  border: 0;
-  border-radius: 7px;
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-  flex: none;
-}
-.ed-tab-add:hover {
-  background: var(--sunken);
-  color: var(--text);
 }
 
 /* ---------- File Explorer integration ---------- */

@@ -46,6 +46,8 @@ export interface PdfSource {
   bytes: Uint8Array;
   password?: string;
   pageCount: number;
+  /** Set when this is an open tab's file, so a tool's result can be applied back to that tab. */
+  docId?: string;
 }
 
 export async function readFile(file: File) {

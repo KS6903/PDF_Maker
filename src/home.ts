@@ -15,7 +15,7 @@ export function setShellIntegration(fn: ShellIntegration) {
 /** Each tool gets its own accent so it's recognisable at a glance. */
 export const TOOL_COLORS: Record<string, string> = Object.fromEntries(CATALOG.filter((e) => e.tool).map((e) => [e.tool!, e.color]));
 
-const RECOMMENDED = ['Edit a PDF', 'Create a PDF', 'Combine files', 'Compress a PDF', 'Organize pages', 'Extract text'];
+const RECOMMENDED = ['Edit a PDF', 'Create a PDF', 'Combine PDFs', 'Compress a PDF', 'Organize pages', 'PDF to text or Word'];
 
 export function toolIcon(t: Tool, size = 22) {
   const entry = CATALOG.find((e) => e.tool === t.id);

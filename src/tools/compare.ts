@@ -337,8 +337,8 @@ export const compareTool: Tool = {
     const output = h('div', { class: 'stack' });
     const go = button('Compare', () => void run(), { icon: GitCompare, kind: 'primary', disabled: true });
     const ready = () => (go.disabled = !(srcA && srcB));
-    const inputA = pdfInput(ctx, (s) => ((srcA = s), ready()));
-    const inputB = pdfInput(ctx, (s) => ((srcB = s), ready()));
+    const inputA = pdfInput(ctx, (s) => ((srcA = s), ready()), { addToTabs: false, bind: false });
+    const inputB = pdfInput(ctx, (s) => ((srcB = s), ready()), { useOpen: false, addToTabs: false, bind: false });
 
     async function run() {
       if (!srcA || !srcB) return;

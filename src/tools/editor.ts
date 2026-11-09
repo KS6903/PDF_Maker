@@ -17,27 +17,24 @@ import {
   Redo2,
   ZoomIn,
   ZoomOut,
-  Save,
   Trash2,
   Bold,
   Italic,
   Sparkles,
   Copy,
-  Plus,
-  FileText,
 } from 'lucide';
 import { degrees, rgb, BlendMode, LineCapStyle, PDFTextField, PDFCheckBox, type PDFPage } from '@cantoo/pdf-lib';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import type { TextItem } from 'pdfjs-dist/types/src/display/api';
-import { h, button, icon, withBusy, toast, select, numberInput, confirmDiscard } from '../lib/ui';
-import { setUnsavedGuard, clearUnsavedGuard, type UnsavedGuard } from '../lib/unsaved';
-import { loadLib, loadJs, openPdf, renderPage, pdfOutput, baseName, hexToRgb01, visualFrame, pdfjs, type PdfSource } from '../lib/pdf';
+import { h, button, icon, withBusy, toast, select, numberInput } from '../lib/ui';
+import { loadLib, loadJs, openPdf, renderPage, hexToRgb01, visualFrame, pdfjs, type PdfSource } from '../lib/pdf';
+import { activeDoc, closeDocument, getDoc, listDocs, onDocsChange, openDocument, setActive, setBaker, setDirty, type OpenDoc } from '../lib/documents';
 import { FontCache, FONT_OPTIONS, CSS_FONT, baselineEm, safeText, type FontFamily } from '../lib/fonts';
 import { signatureDialog } from './signature';
 import { fromWidgets, fromText, fromCanvas, mergeSuggestions, overlap, type Suggestion } from '../lib/detect';
 import { rememberEntry, suggestEntries, forgetEntry, forgetAll } from '../lib/autofill';
 import { clearSession } from '../lib/session';
-import { pdfInput, resultsPanel, type Tool } from './common';
+import { pdfInput, type Tool } from './common';
 
 /* ---------- annotation model (visual page coordinates, points, origin top-left) ---------- */
 
@@ -172,14 +169,14 @@ interface PageView {
 
 export const editorTool: Tool = {
   id: 'editor',
-  title: 'Edit & sign',
+  title: 'Edit a PDF',
   blurb: 'Add or change text, draw, highlight, white-out, insert images and sign.',
   icon: FilePen,
   group: 'Edit & sign',
   wide: true,
   acceptsPdf: true,
+  keepAlive: true,
   mount(root, ctx) {
-    let src: PdfSource | null = null;
     let pages: PageView[] = [];
     let anns: Ann[] = [];
     let nextId = 1;
@@ -187,13 +184,11 @@ export const editorTool: Tool = {
     let selectedId: number | null = null;
     let editingId: number | null = null;
     let zoom = 1;
-    let dirty = false;
     let undoStack: Ann[][] = [];
     let redoStack: Ann[][] = [];
     const styles: Record<string, Style> = {};
     const styleFor = (t: string): Style => (styles[t] ??= { color: '#111111', size: 14, weight: 0.125, family: 'helvetica', bold: false, italic: false, ...DEFAULT_STYLE[t] });
 
-    const results = resultsPanel(ctx);
     const scroller = h('div', { class: 'ed-scroll' });
     let pagesEl: HTMLElement = h('div', { class: 'ed-pages' });
     let observer: IntersectionObserver | null = null;
@@ -276,7 +271,6 @@ export const editorTool: Tool = {
       h('span', { class: 'spacer' }),
       undoBtn,
       redoBtn,
-      button('Save PDF', () => save(), { icon: Save, kind: 'primary' }),
       imageInput,
     );
     const viewPill = h(
@@ -289,54 +283,36 @@ export const editorTool: Tool = {
       button(null, () => setZoom(zoom * 1.2), { icon: ZoomIn, title: 'Zoom in (pinch, or Ctrl and the wheel)', kind: 'ghost' }),
       button('Fit', () => fitWidth(), { kind: 'ghost', title: 'Fit to width' }),
     );
-    const tabsEl = h('div', { class: 'ed-tabs', role: 'tablist', 'aria-label': 'Open documents' });
-    const tabInput = h('input', {
-      type: 'file',
-      accept: 'application/pdf,.pdf',
-      multiple: true,
-      hidden: true,
-      onchange: async () => {
-        const files = [...(tabInput.files ?? [])];
-        tabInput.value = '';
-        for (const file of files) {
-          const opened = await withBusy('Opening PDF…', () => openPdf(file));
-          if (opened) await openDoc(opened);
-        }
-      },
-    }) as HTMLInputElement;
-
     const hintText = h('span');
     const hint = h('div', { class: 'ed-hint' }, hintText, h('span', { class: 'spacer' }), suggestBtn);
-    const workspace = h('div', { class: 'ed-workspace', hidden: true }, tabsEl, bar, hint, h('div', { class: 'ed-stage' }, scroller, viewPill), h('div', { class: 'ed-results' }, results.el));
+    const workspace = h('div', { class: 'ed-workspace', hidden: true }, bar, hint, h('div', { class: 'ed-stage' }, scroller, viewPill));
 
-    const launchFiles = ctx.takeIncomingFiles();
-    const input = pdfInput(ctx, (s) => void openDoc(s));
-    void (async () => {
-      // The editor opens with the document you asked for and nothing else.
-      // Tabs live for as long as the editor is open; they are not stored and
-      // brought back later, which used to mean every file opened by name piled
-      // up and reappeared all at once.
-      await clearSession();
-      for (const file of launchFiles ?? []) {
-        const opened = await withBusy('Opening PDF…', () => openPdf(file));
-        if (opened) await openDoc(opened);
-      }
-    })();
-    const intro = h('div', { class: 'ed-intro' }, input.el);
+    // A file picked here opens in a tab like any other; sync() then shows it.
+    const input = pdfInput(ctx, () => {}, { useOpen: false, bind: false });
+    // Old builds kept a copy of every tab in storage; nothing reads it any more.
+    void clearSession();
+    const intro = h('div', { class: 'ed-intro' }, h('h1', { class: 'ed-intro-title' }, 'Edit a PDF'), input.el);
     scroller.addEventListener('dragover', (e) => e.preventDefault());
     scroller.addEventListener('drop', async (e) => {
       e.preventDefault();
       for (const file of [...(e.dataTransfer?.files ?? [])].filter((x) => /\.pdf$/i.test(x.name) || x.type === 'application/pdf')) {
         const opened = await withBusy('Opening PDF…', () => openPdf(file));
-        if (opened) await openDoc(opened);
+        if (opened) openDocument(opened);
       }
     });
     root.append(intro, workspace);
 
-    /* ---------- open documents (tabs) ---------- */
+    /* ---------- open documents ---------- */
 
-    /** One open document: its pages, edits, history and view state. */
+    /**
+     * What the editor holds for one open tab: its rendered pages, marks,
+     * history and view. The tabs themselves live in lib/documents, shared with
+     * every other tool; this is built the first time a tab is shown here.
+     */
     interface DocState {
+      id: string;
+      /** The tab's version this was built from. A newer one means a tool replaced the file. */
+      version: number;
       src: PdfSource;
       js: PDFDocumentProxy;
       pages: PageView[];
@@ -344,7 +320,6 @@ export const editorTool: Tool = {
       nextId: number;
       selectedId: number | null;
       zoom: number;
-      dirty: boolean;
       undoStack: Ann[][];
       redoStack: Ann[][];
       lastSnap: string;
@@ -352,112 +327,55 @@ export const editorTool: Tool = {
       observer: IntersectionObserver | null;
       scrollTop: number;
     }
-    const docs: DocState[] = [];
-    let activeDoc = -1;
-
-    function renderTabs() {
-      tabsEl.replaceChildren(
-        ...docs.map((d, i) =>
-          h(
-            'div',
-            {
-              class: `ed-tab${i === activeDoc ? ' active' : ''}`,
-              role: 'tab',
-              tabindex: 0,
-              'aria-selected': String(i === activeDoc),
-              title: d.src.name,
-              onclick: () => switchDoc(i),
-              onkeydown: (e: KeyboardEvent) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  switchDoc(i);
-                }
-              },
-              onauxclick: (e: MouseEvent) => e.button === 1 && void closeDoc(i),
-            },
-            icon(FileText, 14),
-            h('span', { class: 'ed-tab-name' }, d.src.name),
-            d.dirty ? h('span', { class: 'ed-tab-dot', title: 'Unsaved edits' }) : null,
-            h(
-              'button',
-              {
-                type: 'button',
-                class: 'ed-tab-close',
-                title: 'Close',
-                'aria-label': `Close ${d.src.name}`,
-                onclick: (e: MouseEvent) => {
-                  e.stopPropagation();
-                  void closeDoc(i);
-                },
-              },
-              icon(X, 13),
-            ),
-          ),
-        ),
-        h('button', { type: 'button', class: 'ed-tab-add', title: 'Open another PDF', 'aria-label': 'Open another PDF', onclick: () => tabInput.click() }, icon(Plus, 16)),
-        tabInput,
-      );
-      tabsEl.hidden = !docs.length;
-    }
+    const states = new Map<string, DocState>();
+    const loading = new Map<string, Promise<DocState | null>>();
+    let activeId: string | null = null;
 
     /** Copy the live editing state back into the active document. */
     function captureActive() {
-      const d = docs[activeDoc];
+      const d = activeId ? states.get(activeId) : undefined;
       if (!d) return;
       finishEditing();
-      Object.assign(d, { pages, anns, nextId, selectedId, zoom, dirty, undoStack, redoStack, lastSnap, pagesEl, observer, scrollTop: scroller.scrollTop });
+      Object.assign(d, { pages, anns, nextId, selectedId, zoom, undoStack, redoStack, lastSnap, pagesEl, observer, scrollTop: scroller.scrollTop });
     }
 
-    function activate(i: number) {
-      const d = docs[i];
-      if (!d) return;
-      activeDoc = i;
-      src = d.src;
+    function activate(d: DocState) {
+      activeId = d.id;
       pages = d.pages;
       anns = d.anns;
       nextId = d.nextId;
       selectedId = d.selectedId;
       zoom = d.zoom;
-      dirty = d.dirty;
       undoStack = d.undoStack;
       redoStack = d.redoStack;
       lastSnap = d.lastSnap;
       observer = d.observer;
       pagesEl = d.pagesEl;
-      docs.forEach((o) => (o.pagesEl.hidden = o !== d));
+      for (const o of states.values()) o.pagesEl.hidden = o !== d;
       editingId = null;
       editingEl = null;
       autofillEl = null;
+      workspace.hidden = false;
+      intro.hidden = true;
       scroller.scrollTop = d.scrollTop;
       zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
       pages.forEach(layoutPage);
       pages.filter(isVisible).forEach((p) => void draw(p));
       pages.forEach(renderLayer);
-      renderTabs();
       updateHistoryButtons();
       updateSuggestButton();
       updatePageLabel();
       syncProps();
-      results.hide();
     }
 
-    function switchDoc(i: number) {
-      if (i === activeDoc || !docs[i]) return;
-      captureActive();
-      activate(i);
-    }
-
-    async function openDoc(s: PdfSource | null) {
-      if (!s) return;
-      // Opening a document that is already open switches to it, with its
-      // unsaved edits intact, rather than stacking an identical tab.
-      const already = docs.findIndex((d) => d.src.name === s.name && d.src.bytes.byteLength === s.bytes.byteLength);
-      if (already >= 0) {
-        switchDoc(already);
-        return;
-      }
-      captureActive();
+    /** Render a tab's pages for the first time. */
+    function load(doc: OpenDoc): Promise<DocState | null> {
+      const pending = loading.get(doc.id);
+      if (pending) return pending;
+      const s = doc.src;
       const d: DocState = {
+        id: doc.id,
+        version: doc.version,
         src: s,
         js: null as unknown as PDFDocumentProxy,
         pages: [],
@@ -465,89 +383,135 @@ export const editorTool: Tool = {
         nextId: 1,
         selectedId: null,
         zoom: 1,
-        dirty: false,
         undoStack: [],
         redoStack: [],
         lastSnap: JSON.stringify([]),
-        pagesEl: h('div', { class: 'ed-pages' }),
+        pagesEl: h('div', { class: 'ed-pages', hidden: true }),
         observer: null,
         scrollTop: 0,
       };
-      scroller.append(d.pagesEl);
-      docs.push(d);
-      const ok = await withBusy('Loading pages…', async () => {
-        d.js = await loadJs(s);
-        d.observer = new IntersectionObserver(
-          (entries) => entries.forEach((e) => e.isIntersecting && void draw(d.pages[+(e.target as HTMLElement).dataset.index!])),
-          { root: scroller, rootMargin: '800px 0px' },
-        );
-        for (let i = 0; i < d.js.numPages; i++) {
-          const proxy = await d.js.getPage(i + 1);
-          const vp = proxy.getViewport({ scale: 1 });
-          const canvas = h('canvas');
-          const layer = h('div', { class: 'ed-layer' });
-          const text = h('div', { class: 'ed-text' });
-          // Text sits under the annotation layer, which steps out of the way
-          // (pointer-events: none) whenever the Select tool is active.
-          const el = h('div', { class: 'ed-page', 'data-index': String(i) }, canvas, text, layer, h('span', { class: 'ed-pagenum' }, `${i + 1} / ${d.js.numPages}`));
-          const pv: PageView = { index: i, proxy, width: vp.width, height: vp.height, el, canvas, layer, text, textLayer: null, renderedZoom: 0, rendering: false };
-          d.pages.push(pv);
-          d.pagesEl.append(el);
-          d.observer.observe(el);
+      const task = (async () => {
+        const ok = await withBusy('Loading pages…', async () => {
+          d.js = await loadJs(s);
+          d.observer = new IntersectionObserver(
+            (entries) => entries.forEach((e) => e.isIntersecting && void draw(d.pages[+(e.target as HTMLElement).dataset.index!])),
+            { root: scroller, rootMargin: '800px 0px' },
+          );
+          for (let i = 0; i < d.js.numPages; i++) {
+            const proxy = await d.js.getPage(i + 1);
+            const vp = proxy.getViewport({ scale: 1 });
+            const canvas = h('canvas');
+            const layer = h('div', { class: 'ed-layer' });
+            const text = h('div', { class: 'ed-text' });
+            // Text sits under the annotation layer, which steps out of the way
+            // (pointer-events: none) whenever the Select tool is active.
+            const el = h('div', { class: 'ed-page', 'data-index': String(i) }, canvas, text, layer, h('span', { class: 'ed-pagenum' }, `${i + 1} / ${d.js.numPages}`));
+            const pv: PageView = { index: i, proxy, width: vp.width, height: vp.height, el, canvas, layer, text, textLayer: null, renderedZoom: 0, rendering: false };
+            d.pages.push(pv);
+            d.pagesEl.append(el);
+            d.observer.observe(el);
+          }
+          return true;
+        });
+        loading.delete(doc.id);
+        if (!ok) {
+          void d.js?.loadingTask.destroy();
+          d.observer?.disconnect();
+          return null;
         }
-        return true;
-      });
-      if (!ok) {
-        // Loading failed: drop the half-open tab.
-        d.pagesEl.remove();
-        docs.splice(docs.indexOf(d), 1);
-        renderTabs();
-        return;
-      }
-      workspace.hidden = false;
-      intro.hidden = true;
-      activate(docs.indexOf(d));
-      d.pages.forEach(bindLayer);
-      fitWidth();
-      setTool('select');
-      updatePageLabel();
+        scroller.append(d.pagesEl);
+        states.set(doc.id, d);
+        return d;
+      })();
+      loading.set(doc.id, task);
+      return task;
     }
 
-    async function closeDoc(i: number) {
-      const d = docs[i];
+    function dispose(id: string) {
+      const d = states.get(id);
       if (!d) return;
-      if (i === activeDoc) captureActive();
-      if (
-        d.dirty &&
-        !(await confirmDiscard({
-          title: 'Unsaved changes',
-          message: `“${d.src.name}” has edits that haven’t been saved to a PDF yet.`,
-          detail: 'Keep it open and use Save to write them out first.',
-          confirm: 'Discard and close',
-          cancel: 'Keep open',
-        }))
-      )
-        return;
       for (const p of d.pages) p.textLayer?.cancel();
-      await d.js?.loadingTask.destroy();
+      void d.js?.loadingTask.destroy();
       d.observer?.disconnect();
       d.pagesEl.remove();
-      docs.splice(i, 1);
-      if (!docs.length) {
-        activeDoc = -1;
-        src = null;
-
+      states.delete(id);
+      if (activeId === id) {
+        activeId = null;
         pages = [];
         anns = [];
-        dirty = false;
-        workspace.hidden = true;
-        intro.hidden = false;
-        input.set(null);
-        renderTabs();
-        return;
+        editingId = null;
+        editingEl = null;
+        autofillEl = null;
       }
-      activate(Math.min(i, docs.length - 1));
     }
+
+    /** Bring the editor in line with the open tabs: show the active one, drop closed ones. */
+    let syncing = false;
+    async function sync() {
+      if (!root.isConnected || syncing) return;
+      syncing = true;
+      try {
+        for (;;) {
+          for (const [id, d] of states) {
+            const tab = getDoc(id);
+            // Closed, or a tool put a new file in the tab (the marks are already in it).
+            if (!tab || tab.version !== d.version) {
+              if (id === activeId) finishEditing();
+              dispose(id);
+            }
+          }
+          const want = activeDoc();
+          if (!want) {
+            activeId = null;
+            workspace.hidden = true;
+            intro.hidden = false;
+            input.set(null);
+            return;
+          }
+          if (want.id === activeId && states.has(want.id)) return;
+          captureActive();
+          const fresh = !states.has(want.id);
+          const d = states.get(want.id) ?? (await load(want));
+          if (!d) {
+            // Couldn't render it; don't leave a tab that shows nothing.
+            await closeDocument(want.id);
+            continue;
+          }
+          // The tabs may have moved on while the pages were loading.
+          if (activeDoc()?.id !== want.id || getDoc(want.id)?.version !== d.version) continue;
+          activate(d);
+          if (fresh) {
+            d.pages.forEach(bindLayer);
+            fitWidth();
+            setTool('select');
+            updatePageLabel();
+          }
+          return;
+        }
+      } finally {
+        syncing = false;
+      }
+    }
+
+    const offDocs = onDocsChange(() => void sync());
+    root.addEventListener('tool-show', () => {
+      const d = activeId ? states.get(activeId) : undefined;
+      if (d) scroller.scrollTop = d.scrollTop;
+      void sync();
+      // The window may have been resized while another tool was showing.
+      pages.filter(isVisible).forEach((p) => void draw(p));
+      updatePageLabel();
+    });
+    root.addEventListener('tool-hide', () => captureActive());
+    queueMicrotask(() => void sync());
+
+    /** The file with this tab's marks drawn in, for saving, printing and other tools. */
+    setBaker(async (id) => {
+      if (id === activeId) captureActive();
+      const d = states.get(id);
+      if (!d || !d.anns.length || getDoc(id)?.version !== d.version) return null;
+      return buildPdf(d.src, d.anns);
+    });
 
     /* ---------- fill-in suggestions (like Acrobat's Fill & Sign) ---------- */
     let showSuggestions = true;
@@ -654,7 +618,7 @@ export const editorTool: Tool = {
     const endOfContent = (p: PageView) => p.text.querySelector('.end-of-content');
     // A drag that ends outside the page still has to finish cleanly.
     const onPointerUp = () => {
-      for (const d of docs) for (const p of d.pages) endOfContent(p)?.classList.remove('active');
+      for (const d of states.values()) for (const p of d.pages) endOfContent(p)?.classList.remove('active');
     };
     document.addEventListener('pointerup', onPointerUp);
 
@@ -812,9 +776,9 @@ export const editorTool: Tool = {
 
     /* ---------- tools & properties ---------- */
     const HINTS: Record<ToolId, string> = {
-      select: 'Drag over the page to select text, then Ctrl+C to copy (Ctrl+A selects it all). Click an item to select it; drag to move, drag any corner to resize (Shift stretches freely). Double-click text to edit.',
-      text: 'Click anywhere on a page to type, or click a blue box to fill it in.',
-      edittext: 'Click on existing text to replace it. The original is covered with white-out and you can retype it.',
+      select: 'Click something you added to select it, then drag to move it or drag a corner to resize. Click selected text again to change it. Drag across the page’s own text to copy it.',
+      text: 'Click anywhere on a page to type. Click a blue box to fill it in, or click text you added to change it.',
+      edittext: 'Click a word in the original PDF to retype it. The old text is covered so only your version shows.',
       draw: 'Drag to draw freehand.',
       highlight: 'Drag over text to highlight it.',
       whiteout: 'Drag to cover content with a solid box (pick the color to match the background).',
@@ -936,13 +900,8 @@ export const editorTool: Tool = {
       if (undoStack.length > 200) undoStack.shift();
       redoStack.length = 0;
       lastSnap = json;
-      const was = dirty;
-      dirty = true;
       updateHistoryButtons();
-      if (!was) {
-        if (docs[activeDoc]) docs[activeDoc].dirty = true;
-        renderTabs();
-      }
+      if (activeId) setDirty(activeId, true);
     }
     function undo() {
       finishEditing();
@@ -977,7 +936,10 @@ export const editorTool: Tool = {
 
     function renderLayer(p: PageView | undefined) {
       if (!p) return;
-      p.layer.replaceChildren();
+      // The text being typed stays put: taking a focused element out of the
+      // page, even for a moment, drops the caret and ends the edit.
+      const keep = editingEl && editingEl.parentElement === p.layer ? editingEl : null;
+      for (const c of [...p.layer.children]) if (c !== keep) c.remove();
       if (showSuggestions) {
         for (const sg of openSuggestions(p)) {
           const el = h('div', {
@@ -998,7 +960,7 @@ export const editorTool: Tool = {
         if (editingEl && a.id === editingId) {
           // Reuse the live contenteditable so typing isn't interrupted.
           styleTextEl(editingEl, a as TextAnn);
-          p.layer.append(editingEl);
+          if (!keep) p.layer.append(editingEl);
           continue;
         }
         p.layer.append(annElement(a));
@@ -1085,7 +1047,7 @@ export const editorTool: Tool = {
 
     /* ---------- pointer interaction ---------- */
     type Drag =
-      | { kind: 'move'; ann: Ann; start: [number, number]; orig: Ann; moved: boolean }
+      | { kind: 'move'; ann: Ann; start: [number, number]; orig: Ann; moved: boolean; wasSelected: boolean }
       | { kind: 'resize'; ann: Ann; start: [number, number]; orig: Ann; corner: Corner; box: { x: number; y: number; w: number; h: number } }
       | { kind: 'rect'; ann: RectAnn; start: [number, number] }
       | { kind: 'ink'; ann: InkAnn; start: [number, number] }
@@ -1122,8 +1084,9 @@ export const editorTool: Tool = {
           if (handle && hitAnn) {
             drag = { kind: 'resize', ann: hitAnn, start: [x, y], orig: cloneAnn(hitAnn), corner: (handle.dataset.handle ?? 'se') as Corner, box: bbox(hitAnn) };
           } else if (hitAnn) {
+            const wasSelected = selectedId === hitAnn.id;
             select_(hitAnn.id);
-            drag = { kind: 'move', ann: hitAnn, start: [x, y], orig: cloneAnn(hitAnn), moved: false };
+            drag = { kind: 'move', ann: hitAnn, start: [x, y], orig: cloneAnn(hitAnn), moved: false, wasSelected };
           } else {
             select_(null);
             return;
@@ -1135,6 +1098,12 @@ export const editorTool: Tool = {
 
         e.preventDefault();
         finishEditing();
+        // With either text tool, clicking text you added edits it rather than
+        // starting a new box on top of it.
+        if ((tool === 'text' || tool === 'edittext') && hitAnn?.type === 'text') {
+          startEditing(hitAnn);
+          return;
+        }
         const st = styleFor(tool);
         switch (tool) {
           case 'text': {
@@ -1240,6 +1209,11 @@ export const editorTool: Tool = {
         if (!drag) return;
         const d = drag;
         drag = null;
+        // Clicking text that was already selected, without dragging it, edits it.
+        if (d.kind === 'move' && !d.moved && d.wasSelected && d.ann.type === 'text') {
+          startEditing(d.ann);
+          return;
+        }
         if (d.kind === 'rect' && (d.ann.w < 3 || d.ann.h < 3)) {
           // A click without dragging: make a sensibly sized box.
           d.ann.w = d.ann.mode === 'highlight' ? 120 : 100;
@@ -1262,9 +1236,11 @@ export const editorTool: Tool = {
       p.layer.addEventListener('pointerleave', () => (hover.hidden = true));
 
       p.layer.addEventListener('dblclick', (e) => {
+        // Pointer capture during the click makes the layer itself the target,
+        // so fall back to what the first click selected.
         const id = Number(((e.target as Element).closest('[data-id]') as HTMLElement | null)?.dataset.id ?? NaN);
-        const a = anns.find((x) => x.id === id);
-        if (a?.type === 'text') startEditing(a);
+        const a = anns.find((x) => x.id === id) ?? anns.find((x) => x.id === selectedId);
+        if (a?.type === 'text' && a.page === p.index && editingId !== a.id) startEditing(a);
       });
       layoutPage(p);
     }
@@ -1647,7 +1623,7 @@ export const editorTool: Tool = {
     /* ---------- keyboard ---------- */
     /** Ctrl+A: select every page's text, not the rest of the app around it. */
     async function selectAllText() {
-      const d = docs[activeDoc];
+      const d = activeId ? states.get(activeId) : undefined;
       if (!d) return;
       // Pages that were never scrolled into view have no text spans yet.
       const missing = d.pages.filter((p) => !p.textLayer);
@@ -1677,15 +1653,14 @@ export const editorTool: Tool = {
         redo();
       } else if (mod && e.key.toLowerCase() === 'w') {
         e.preventDefault();
-        void closeDoc(activeDoc);
+        if (activeId) void closeDocument(activeId);
       } else if (mod && (e.key === 'Tab' || e.key === 'PageDown' || e.key === 'PageUp')) {
-        if (docs.length < 2) return;
+        const tabs = listDocs();
+        if (tabs.length < 2) return;
         e.preventDefault();
         const back = e.shiftKey || e.key === 'PageUp';
-        switchDoc((activeDoc + (back ? -1 : 1) + docs.length) % docs.length);
-      } else if (mod && e.key.toLowerCase() === 's') {
-        e.preventDefault();
-        void save();
+        const i = tabs.findIndex((t) => t.id === activeId);
+        setActive(tabs[(i + (back ? -1 : 1) + tabs.length) % tabs.length].id);
       } else if (mod && e.key.toLowerCase() === 'a') {
         // Select the whole document's text rather than the surrounding app.
         e.preventDefault();
@@ -1704,65 +1679,6 @@ export const editorTool: Tool = {
     document.addEventListener('keydown', onKey);
     const onResize = () => pages.length && pages.filter(isVisible).forEach((p) => void draw(p));
     window.addEventListener('resize', onResize);
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (unsaved().length) e.preventDefault();
-    };
-    window.addEventListener('beforeunload', onBeforeUnload);
-    /** Names of the open documents whose edits are not in a PDF yet. */
-    function unsaved() {
-      return docs.filter((d, i) => (i === activeDoc ? dirty : d.dirty)).map((d) => d.src.name);
-    }
-    // The desktop shell asks this before it closes the window, so the question
-    // is the app's own dialog rather than a native message box.
-    const guard: UnsavedGuard = { names: unsaved };
-    setUnsavedGuard(guard);
-
-    /* ---------- save ---------- */
-    async function save() {
-      if (!src) return;
-      finishEditing();
-      const s = src;
-      const out = await withBusy('Saving PDF…', async () => {
-        const doc = await loadLib(s);
-        const fonts = new FontCache(doc);
-        const images = new Map<string, Awaited<ReturnType<typeof doc.embedPng>>>();
-        const form = doc.getForm();
-        for (const a of anns) {
-          // Text typed into a real form field is saved as the field's value.
-          if (a.type === 'text' && a.field) {
-            const fld = form.getFieldMaybe(a.field);
-            if (fld instanceof PDFTextField) {
-              fld.setText(safeText(await fonts.get('helvetica'), a.text));
-              continue;
-            }
-          }
-          if (a.type === 'ink' && a.field) {
-            const fld = form.getFieldMaybe(a.field);
-            if (fld instanceof PDFCheckBox) {
-              fld.check();
-              continue;
-            }
-          }
-          const page = doc.getPage(a.page);
-          await drawAnn(page, a, fonts, async (dataUrl) => {
-            let img = images.get(dataUrl);
-            if (!img) {
-              const bytes = dataUrlBytes(dataUrl);
-              img = dataUrl.startsWith('data:image/png') ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
-              images.set(dataUrl, img);
-            }
-            return img;
-          });
-        }
-        return doc.save();
-      });
-      if (!out) return;
-      dirty = false;
-      if (docs[activeDoc]) docs[activeDoc].dirty = false;
-      renderTabs();
-      results.show([pdfOutput(`${baseName(s.name)}-edited`, out)]);
-    }
-
     return () => {
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('pointerup', onPointerUp);
@@ -1772,17 +1688,49 @@ export const editorTool: Tool = {
       scroller.removeEventListener('pointerup', onPinchUp, { capture: true });
       scroller.removeEventListener('pointercancel', onPinchUp, { capture: true });
       scroller.removeEventListener('wheel', onZoomWheel);
-      window.removeEventListener('beforeunload', onBeforeUnload);
-      clearUnsavedGuard(guard);
-      for (const d of docs) {
-        d.observer?.disconnect();
-        void d.js?.loadingTask.destroy();
-      }
+      offDocs();
+      for (const id of [...states.keys()]) dispose(id);
     };
   },
 };
 
 /* ---------- drawing annotations into the PDF ---------- */
+
+/** The file with the editor's marks written into it. */
+async function buildPdf(s: PdfSource, anns: Ann[]): Promise<Uint8Array> {
+  const doc = await loadLib(s);
+  const fonts = new FontCache(doc);
+  const images = new Map<string, Awaited<ReturnType<typeof doc.embedPng>>>();
+  const form = doc.getForm();
+  for (const a of anns) {
+    // Text typed into a real form field is saved as the field's value.
+    if (a.type === 'text' && a.field) {
+      const fld = form.getFieldMaybe(a.field);
+      if (fld instanceof PDFTextField) {
+        fld.setText(safeText(await fonts.get('helvetica'), a.text));
+        continue;
+      }
+    }
+    if (a.type === 'ink' && a.field) {
+      const fld = form.getFieldMaybe(a.field);
+      if (fld instanceof PDFCheckBox) {
+        fld.check();
+        continue;
+      }
+    }
+    const page = doc.getPage(a.page);
+    await drawAnn(page, a, fonts, async (dataUrl) => {
+      let img = images.get(dataUrl);
+      if (!img) {
+        const bytes = dataUrlBytes(dataUrl);
+        img = dataUrl.startsWith('data:image/png') ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
+        images.set(dataUrl, img);
+      }
+      return img;
+    });
+  }
+  return doc.save();
+}
 
 function color(hex: string) {
   const [r, g, b] = hexToRgb01(hex);
