@@ -1,36 +1,60 @@
-import { Images, ImageDown, ChevronUp, ChevronDown, X, ImagePlus, FileImage } from 'lucide';
-import { PDFDocument, type PDFImage } from '@cantoo/pdf-lib';
-import { h, button, dropzone, withBusy, field, select, numberInput, textInput } from '../lib/ui';
-import { imageUrlToPng } from '../lib/layout';
-import {
-  loadJs,
-  rasterizePage,
-  canvasToBlob,
-  parseRanges,
-  pdfOutput,
-  baseName,
-  PAGE_SIZES,
-  PAGE_SIZE_OPTIONS,
-  type OutputFile,
-} from '../lib/pdf';
+import { Images, ImageDown, ChevronUp, ChevronDown, X, ImagePlus, FileImage, Move } from 'lucide';
+import { PDFDocument } from '@cantoo/pdf-lib';
+import { h, button, dropzone, withBusy, field, select, numberInput, textInput, toast, errorMessage } from '../lib/ui';
+import { loadJs, rasterizePage, canvasToBlob, parseRanges, pdfOutput, baseName, PAGE_SIZE_OPTIONS, type OutputFile } from '../lib/pdf';
+import { pictureKind, decodeImage, embedPageImage, addImagePage, layoutPicture, type ImagePageOptions, type PageImage, type PictureAdjust } from '../lib/images';
+import { adjustPicture, pageDrawing } from '../lib/placepicture';
 import { resultsPanel, simpleTool, panel, type Tool } from './common';
 
 interface ImgItem {
-  file: File;
+  name: string;
+  img: PageImage;
   url: string;
+  /** Pixel size, upright. */
+  px: number;
+  py: number;
+  adjust: PictureAdjust;
+}
+
+/** Read picture files into ready-to-place items. Files that aren't pictures are named in one message. */
+async function readPictures(files: File[]): Promise<ImgItem[]> {
+  const out: ImgItem[] = [];
+  const refused: string[] = [];
+  for (const f of files) {
+    try {
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      const kind = pictureKind(bytes, f.name);
+      if (!kind) {
+        refused.push(f.name);
+        continue;
+      }
+      const pages = await decodeImage(bytes, kind);
+      for (const [i, img] of pages.entries()) {
+        const url = URL.createObjectURL(new Blob([img.bytes as BlobPart], { type: img.type === 'jpg' ? 'image/jpeg' : 'image/png' }));
+        const el = new Image();
+        el.src = url;
+        await el.decode();
+        out.push({ name: pages.length > 1 ? `${f.name} (page ${i + 1})` : f.name, img, url, px: el.naturalWidth, py: el.naturalHeight, adjust: {} });
+      }
+    } catch (err) {
+      toast(`${f.name}: ${errorMessage(err)}`, 'error');
+    }
+  }
+  if (refused.length) toast(`Not a picture, so left out: ${refused.join(', ')}`, 'error');
+  return out;
 }
 
 export const imagesToPdfTool: Tool = {
   id: 'images-to-pdf',
   title: 'Images → PDF',
-  blurb: 'Turn photos, scans and screenshots (JPG, PNG, WebP…) into a PDF.',
+  blurb: 'Turn photos, scans and screenshots (JPG, PNG, HEIC, WebP…) into a PDF, sized and placed how you want.',
   icon: Images,
   group: 'Convert',
   mount(el, ctx) {
     const items: ImgItem[] = [];
     const list = h('div', { class: 'image-list' });
     const results = resultsPanel(ctx);
-    const size = select<string>([['fit', 'Same as each image'], ...PAGE_SIZE_OPTIONS], 'a4');
+    const size = select<string>([['fit', 'Same as each image'], ...PAGE_SIZE_OPTIONS], 'a4', () => render());
     const orient = select<'auto' | 'portrait' | 'landscape'>(
       [
         ['auto', 'Automatic (match image)'],
@@ -38,45 +62,72 @@ export const imagesToPdfTool: Tool = {
         ['landscape', 'Landscape'],
       ],
       'auto',
+      () => render(),
     );
     const margin = numberInput(24, { min: 0, max: 200 });
+    margin.addEventListener('input', () => render());
     const fitMode = select<'fit' | 'fill'>(
       [
         ['fit', 'Fit whole image on page'],
         ['fill', 'Fill page (crop edges)'],
       ],
       'fit',
+      () => render(),
     );
     const name = textInput('images', 'File name');
     const build = button('Create PDF', () => run(), { icon: FileImage, kind: 'primary', disabled: true });
+    const hint = h('p', { class: 'muted small' }, 'Click a page, or its ', h('strong', null, 'Adjust'), ' button, to resize, move or turn that picture. Pictures you have adjusted keep their size and spot when you change the settings above.');
     const options = panel(
-      h('div', { class: 'grid' }, field('Page size', size), field('Orientation', orient), field('Margin (pt)', margin), field('Image placement', fitMode), field('File name', name)),
+      h('div', { class: 'grid' }, field('Page size', size), field('Orientation', orient), field('Margin (pt)', margin), field('Image placement', fitMode, 'For pictures you haven’t adjusted'), field('File name', name)),
+      hint,
     );
     options.hidden = true;
 
     const zone = dropzone({
-      accept: 'image/*',
+      accept: 'image/*,.heic,.heif,.tif,.tiff,.avif,.svg',
       multiple: true,
       title: 'Choose images or drop them here',
-      hint: 'JPG, PNG, WebP, GIF, BMP, SVG. One page per image',
+      hint: 'JPG, PNG, HEIC, WebP, GIF, BMP, TIFF, SVG. One page per image',
       icon: ImagePlus,
-      onFiles: (files) => {
-        for (const f of files) if (f.type.startsWith('image/')) items.push({ file: f, url: URL.createObjectURL(f) });
-        render();
-      },
+      onFiles: (files) => void add(files),
     });
 
+    async function add(files: File[]) {
+      const read = await withBusy('Reading pictures…', () => readPictures(files));
+      if (!read?.length) return;
+      items.push(...read);
+      if (!name.value.trim() || name.value === 'images') name.value = items.length === 1 ? baseName(items[0].name) : 'images';
+      render();
+    }
+
+    function pageOptions(): ImagePageOptions {
+      return { size: size.value, orientation: orient.value as ImagePageOptions['orientation'], margin: Math.max(0, +margin.value || 0), placement: fitMode.value as 'fit' | 'fill' };
+    }
+
+    async function adjust(it: ImgItem) {
+      const res = await adjustPicture(it, pageOptions(), it.adjust);
+      if (!res) return;
+      it.adjust = res;
+      render();
+    }
+
     function render() {
+      const o = pageOptions();
       list.replaceChildren(
-        ...items.map((it, i) =>
-          h(
+        ...items.map((it, i) => {
+          const drawing = pageDrawing(it);
+          drawing.draw(layoutPicture(o, it.px, it.py, it.adjust), o, it.adjust.rotate ?? 0);
+          drawing.svg.setAttribute('aria-label', `${it.name} on its page`);
+          const adjusted = !!it.adjust.placement || !!it.adjust.rotate;
+          return h(
             'figure',
             { class: 'image-card' },
-            h('img', { src: it.url, alt: it.file.name }),
-            h('figcaption', null, `${i + 1}. ${it.file.name}`),
+            h('button', { type: 'button', class: 'image-thumb', title: 'Resize, move or turn this picture', onclick: () => void adjust(it) }, drawing.svg),
+            h('figcaption', { title: it.name }, `${i + 1}. ${it.name}`, adjusted ? h('span', { class: 'image-badge' }, 'Adjusted') : null),
             h(
               'div',
               { class: 'image-actions' },
+              button('Adjust', () => void adjust(it), { icon: Move, title: 'Resize, move or turn this picture', kind: 'ghost' }),
               button(null, () => move(i, -1), { icon: ChevronUp, title: 'Move earlier', kind: 'ghost', disabled: i === 0 }),
               button(null, () => move(i, 1), { icon: ChevronDown, title: 'Move later', kind: 'ghost', disabled: i === items.length - 1 }),
               button(null, () => {
@@ -85,8 +136,8 @@ export const imagesToPdfTool: Tool = {
                 render();
               }, { icon: X, title: 'Remove', kind: 'ghost' }),
             ),
-          ),
-        ),
+          );
+        }),
       );
       build.disabled = !items.length;
       options.hidden = !items.length;
@@ -99,29 +150,12 @@ export const imagesToPdfTool: Tool = {
     }
 
     async function run() {
+      const o = pageOptions();
       const out = await withBusy('Creating PDF…', async (p) => {
         const doc = await PDFDocument.create();
         for (const [i, it] of items.entries()) {
           p(`Adding image ${i + 1} of ${items.length}…`);
-          const img = await embedImageFile(doc, it.file, it.url);
-          const iw = img.width * 0.75; // px → pt at 96 dpi
-          const ih = img.height * 0.75;
-          let pw: number, ph: number;
-          if (size.value === 'fit') {
-            [pw, ph] = [iw + +margin.value * 2, ih + +margin.value * 2];
-          } else {
-            [pw, ph] = PAGE_SIZES[size.value];
-            const land = orient.value === 'landscape' || (orient.value === 'auto' && img.width > img.height);
-            if (land) [pw, ph] = [ph, pw];
-          }
-          const page = doc.addPage([pw, ph]);
-          const m = +margin.value;
-          const bw = pw - m * 2;
-          const bh = ph - m * 2;
-          const k = fitMode.value === 'fill' ? Math.max(bw / iw, bh / ih) : Math.min(bw / iw, bh / ih);
-          const w = iw * k;
-          const hh = ih * k;
-          page.drawImage(img, { x: m + (bw - w) / 2, y: m + (bh - hh) / 2, width: w, height: hh });
+          addImagePage(doc, await embedPageImage(doc, it.img), o, it.adjust);
         }
         return doc.save();
       });
@@ -130,27 +164,12 @@ export const imagesToPdfTool: Tool = {
 
     el.append(zone, options, list, h('div', { class: 'actions' }, build), results.el);
 
-    // Pictures handed over from File Explorer.
-    const handed = ctx.takeIncomingFiles() ?? [];
-    for (const f of handed) {
-      if (f.type.startsWith('image/') || /\.(jpe?g|png|webp|bmp|gif|tiff?|svg)$/i.test(f.name)) items.push({ file: f, url: URL.createObjectURL(f) });
-    }
-    if (items.length) render();
+    // Pictures handed over from File Explorer, or from Create PDF when the file turned out to be a picture.
+    const handed = ctx.takeIncomingFiles();
+    if (handed?.length) void add(handed);
+    return () => items.forEach((it) => URL.revokeObjectURL(it.url));
   },
 };
-
-async function embedImageFile(doc: PDFDocument, file: File, url: string): Promise<PDFImage> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const isJpg = bytes[0] === 0xff && bytes[1] === 0xd8;
-  const isPng = bytes[0] === 0x89 && bytes[1] === 0x50;
-  try {
-    if (isJpg) return await doc.embedJpg(bytes);
-    if (isPng) return await doc.embedPng(bytes);
-  } catch {
-    /* fall through to canvas conversion (e.g. CMYK or unusual encodings) */
-  }
-  return doc.embedPng(await imageUrlToPng(url));
-}
 
 export const pdfToImagesTool: Tool = {
   id: 'pdf-to-images',

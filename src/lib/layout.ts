@@ -24,7 +24,30 @@ export type Block =
   | { kind: 'gap'; size: number }
   | { kind: 'pagebreak' }
   | { kind: 'table'; rows: Run[][][]; header: boolean }
-  | { kind: 'image'; src: string; alt?: string };
+  | ImageBlock;
+
+export interface ImageBlock {
+  kind: 'image';
+  src: string;
+  alt?: string;
+  /** Share of the text width, 0 to 1. Unset: the picture's own size, shrunk to fit. */
+  width?: number;
+  align?: 'left' | 'center' | 'right';
+  /** Passed back through `onImage`, so a preview can tell which picture is where. */
+  key?: string;
+}
+
+/** Where a picture ended up, in points from the page's top left. */
+export interface PlacedImage {
+  key?: string;
+  page: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** The text width it was laid out against. */
+  maxW: number;
+}
 
 export interface LayoutOptions {
   pageSize: [number, number];
@@ -33,6 +56,8 @@ export interface LayoutOptions {
   fontSize: number;
   lineHeight: number;
   title?: string;
+  /** Told about each picture as it is placed. */
+  onImage?: (p: PlacedImage) => void;
 }
 
 const HEADING_SCALE: Record<TextStyle, number> = { h1: 2, h2: 1.6, h3: 1.3, h4: 1.1, p: 1, line: 1, quote: 1 };
@@ -319,23 +344,31 @@ class Writer {
     this.y += this.o.fontSize * 0.8;
   }
 
-  async image(src: string, alt?: string) {
+  async image(b: ImageBlock) {
     let img: PDFImage;
     try {
-      img = await embedImageSrc(this.doc, src);
+      img = await embedImageSrc(this.doc, b.src);
     } catch {
-      if (alt) await this.text({ kind: 'text', style: 'p', runs: [{ text: `[image: ${alt}]`, italic: true }] });
+      if (b.alt) await this.text({ kind: 'text', style: 'p', runs: [{ text: `[image: ${b.alt}]`, italic: true }] });
       return;
     }
-    // Treat image pixels as CSS px (0.75pt) and scale down to fit the page.
+    // Treat image pixels as CSS px (0.75pt). A chosen width may enlarge it;
+    // either way it is shrunk to fit the page.
     let w = img.width * 0.75;
     let h = img.height * 0.75;
+    if (b.width && b.width > 0) {
+      const target = this.width * Math.min(1, b.width);
+      h *= target / w;
+      w = target;
+    }
     const maxH = this.o.pageSize[1] - this.o.margin * 2;
     const k = Math.min(1, this.width / w, maxH / h);
     w *= k;
     h *= k;
     this.ensure(h);
-    this.page.drawImage(img, { x: this.o.margin, y: this.pdfY(this.y + h), width: w, height: h });
+    const x = this.o.margin + (b.align === 'center' ? (this.width - w) / 2 : b.align === 'right' ? this.width - w : 0);
+    this.page.drawImage(img, { x, y: this.pdfY(this.y + h), width: w, height: h });
+    this.o.onImage?.({ key: b.key, page: this.doc.getPageCount() - 1, x, y: this.y, w, h, maxW: this.width });
     this.y += h + this.o.fontSize * 0.8;
   }
 }
@@ -394,7 +427,7 @@ export async function blocksToPdf(blocks: Block[], o: LayoutOptions): Promise<Ui
         await w.table(b.rows, b.header);
         break;
       case 'image':
-        await w.image(b.src, b.alt);
+        await w.image(b);
         break;
     }
   }
@@ -428,7 +461,7 @@ function walkMd(tokens: Token[], out: Block[], indent: number, quote = false) {
         break;
       }
       case 'paragraph':
-        out.push({ kind: 'text', style: quote ? 'quote' : 'p', runs: inlineMd((t as Tokens.Paragraph).tokens), indent });
+        paragraphMd((t as Tokens.Paragraph).tokens, out, quote ? 'quote' : 'p', indent);
         break;
       case 'text':
         out.push({
@@ -482,6 +515,30 @@ function walkMd(tokens: Token[], out: Block[], indent: number, quote = false) {
         if ('text' in t && typeof t.text === 'string') out.push({ kind: 'text', style: 'p', runs: [{ text: t.text }], indent });
     }
   }
+}
+
+/** A paragraph, with any pictures in it set as pictures of their own between the text. */
+function paragraphMd(tokens: Token[], out: Block[], style: TextStyle, indent: number) {
+  if (!tokens.some((t) => t.type === 'image')) {
+    out.push({ kind: 'text', style, runs: inlineMd(tokens), indent });
+    return;
+  }
+  let text: Token[] = [];
+  const flush = () => {
+    const runs = inlineMd(text);
+    if (runs.some((r) => r.text.trim())) out.push({ kind: 'text', style, runs, indent });
+    text = [];
+  };
+  for (const t of tokens) {
+    if (t.type === 'image') {
+      flush();
+      const img = t as Tokens.Image;
+      out.push({ kind: 'image', src: img.href, alt: img.text || undefined });
+    } else {
+      text.push(t);
+    }
+  }
+  flush();
 }
 
 function inlineMd(tokens: Token[], style: Omit<Run, 'text'> = {}): Run[] {

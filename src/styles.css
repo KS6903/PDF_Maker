@@ -740,18 +740,40 @@ select[multiple] {
   flex-direction: column;
   gap: 6px;
 }
-.image-card img {
+.image-thumb {
+  display: block;
   width: 100%;
-  height: 130px;
-  object-fit: contain;
+  height: 150px;
+  padding: 8px;
+  border: 0;
   background: var(--sunken);
   border-radius: 5px;
+  cursor: pointer;
+}
+.image-thumb:hover .pic-paper {
+  stroke: var(--accent);
+}
+.image-thumb:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 .image-card figcaption {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.image-badge {
+  flex: none;
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
 }
 .image-actions {
   display: flex;
@@ -759,7 +781,80 @@ select[multiple] {
 }
 .image-actions .btn {
   height: 28px;
+}
+.image-actions .btn.icon-only {
   width: 28px;
+}
+
+/* A picture on its page: the card thumbnails and the placement dialog draw the same way. */
+.pic-page {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.pic-paper {
+  fill: #fff;
+  stroke: var(--border-strong);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.pic-margins {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent) 45%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+}
+.modal.pic-modal {
+  width: min(700px, calc(100vw - 32px));
+}
+.pic-adjust {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pic-stage {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--sunken);
+  border-radius: var(--radius-sm);
+  touch-action: none;
+}
+.pic-stage:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.pic-stage-page {
+  position: relative;
+  box-shadow: 0 1px 6px rgb(0 0 0 / 0.18);
+}
+.pic-sel {
+  touch-action: none;
+}
+.pic-size-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pic-size-row input[type='range'] {
+  flex: 1;
+  accent-color: var(--accent);
+}
+input[type='number'].pic-size-num {
+  flex: none;
+  width: 72px;
+}
+.pic-quick-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pic-quick {
+  height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
 }
 
 /* ---------- create ---------- */
@@ -806,10 +901,91 @@ select[multiple] {
   align-items: center;
   gap: 12px;
 }
+.preview-page {
+  position: relative;
+}
 .preview-page canvas {
   display: block;
   background: #fff;
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.15);
+}
+.create-toolbar {
+  align-items: flex-end;
+}
+
+/* Pictures in the Create PDF preview: click to pick one, drag a corner to resize it. */
+.doc-pic {
+  position: absolute;
+  cursor: pointer;
+  border-radius: 2px;
+  touch-action: none;
+}
+.doc-pic:hover {
+  outline: 1.5px dashed var(--focus);
+}
+.doc-pic:focus-visible {
+  outline: 2px solid var(--focus);
+}
+.doc-pic.selected {
+  outline: 1.5px solid var(--focus);
+  cursor: default;
+}
+.doc-pic .sel-handle {
+  display: none;
+}
+.doc-pic.selected .sel-handle {
+  display: block;
+}
+.pic-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.pic-bar[hidden] {
+  display: none;
+}
+.pic-bar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pic-bar-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.pic-bar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.pic-bar-width {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 4px;
+}
+.pic-bar .pic-size-num {
+  width: 58px;
+}
+.pic-bar-group {
+  display: flex;
+}
+.pic-bar .btn.icon-only {
+  width: 32px;
+  height: 32px;
+}
+.pic-bar .btn[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .text-output {

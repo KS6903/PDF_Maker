@@ -7,8 +7,11 @@ import { activeDoc, currentSource, getDoc, openDocument, replaceDocument, type O
 export type ToolGroup = 'Edit & sign' | 'Organize' | 'Convert' | 'Secure & info';
 
 export interface AppContext {
-  /** Switch to another tool, optionally handing it a PDF (which also opens in a tab). */
-  openTool(id: string, file?: PdfSource): void;
+  /**
+   * Switch to another tool, optionally handing it a PDF (which also opens in a
+   * tab) or plain files it picks up with takeIncomingFiles.
+   */
+  openTool(id: string, file?: PdfSource, files?: File[]): void;
   /** A PDF handed over from another tool (consumed on mount). */
   takeIncoming(): PdfSource | undefined;
   /** Is a specific PDF waiting to be opened? Does not consume it. */

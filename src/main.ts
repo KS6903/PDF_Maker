@@ -99,10 +99,11 @@ let bound: { id: string; version: number } | null = null;
 
 const ctx: AppContext = {
   tools: TOOLS,
-  openTool(id, file) {
+  openTool(id, file, files) {
     // A handed-over PDF becomes an open tab, which the tool then picks up.
     if (file?.pageCount) openDocument(file);
     else incoming = file;
+    if (files) incomingFiles = files;
     if (location.hash === `#/${id}`) route();
     else location.hash = `#/${id}`;
   },

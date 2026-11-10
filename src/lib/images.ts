@@ -5,7 +5,7 @@
  * photos) with libheif, which ships as its own file and loads only when needed.
  */
 import UTIF from 'utif';
-import type { PDFDocument, PDFImage } from '@cantoo/pdf-lib';
+import { degrees, type PDFDocument, type PDFImage } from '@cantoo/pdf-lib';
 import { canvasToBlob, PAGE_SIZES } from './pdf';
 
 export interface PageImage {
@@ -34,6 +34,17 @@ export function sniffImage(b: Uint8Array): ImageKind | null {
   const head = new TextDecoder().decode(b.subarray(0, 1024)).trimStart();
   if (/^(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE svg[^>]*>\s*)?<svg[\s>]/i.test(head)) return 'svg';
   return null;
+}
+
+const KIND_BY_EXT: Record<string, ImageKind> = { heic: 'heic', heif: 'heic', svg: 'svg' };
+
+/**
+ * A picture's kind from its contents, falling back on the name only for the
+ * formats that can't be told apart by their first bytes. Null for anything
+ * that isn't a picture, however it is named.
+ */
+export function pictureKind(bytes: Uint8Array, name: string): ImageKind | null {
+  return sniffImage(bytes) ?? KIND_BY_EXT[name.toLowerCase().split('.').pop() ?? ''] ?? null;
 }
 
 /** EXIF orientation of a JPEG (1 = upright), so phone photos aren't sideways. */
@@ -220,24 +231,85 @@ export interface ImagePageOptions {
   placement: 'fit' | 'fill';
 }
 
-/** One page holding the picture, laid out the way Images → PDF does it. */
-export function addImagePage(doc: PDFDocument, img: PDFImage, o: ImagePageOptions) {
-  const iw = img.width * 0.75; // px → pt at 96 dpi
-  const ih = img.height * 0.75;
+/** Quarter turns clockwise. */
+export type Rotation = 0 | 90 | 180 | 270;
+
+/**
+ * Where someone put a picture on its page by hand. `scale` is relative to the
+ * picture fitting inside the margins (1 = fits exactly), and the centre is a
+ * fraction of the page from the top left, so the choice survives a change of
+ * page size or margin.
+ */
+export interface Placement {
+  scale: number;
+  cx: number;
+  cy: number;
+}
+
+export interface PictureAdjust {
+  rotate?: Rotation;
+  /** Unset means the page-wide fit or fill choice. */
+  placement?: Placement;
+}
+
+/** The page and the picture's box on it, in points from the top left. */
+export interface PictureLayout {
+  pw: number;
+  ph: number;
+  /** The picture's bounding box as it appears (after turning). */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** The scale at which the picture just fits inside the margins. */
+  fit: number;
+}
+
+/** Lay out one picture of `px`×`py` pixels on its page. Shared by the preview and the PDF. */
+export function layoutPicture(o: ImagePageOptions, px: number, py: number, adjust: PictureAdjust = {}): PictureLayout {
+  const turned = adjust.rotate === 90 || adjust.rotate === 270;
+  const iw = (turned ? py : px) * 0.75; // px → pt at 96 dpi
+  const ih = (turned ? px : py) * 0.75;
   let pw: number, ph: number;
   if (o.size === 'fit' || !PAGE_SIZES[o.size]) {
     [pw, ph] = [iw + o.margin * 2, ih + o.margin * 2];
   } else {
     [pw, ph] = PAGE_SIZES[o.size];
-    const land = o.orientation === 'landscape' || (o.orientation === 'auto' && img.width > img.height);
+    const land = o.orientation === 'landscape' || (o.orientation === 'auto' && iw > ih);
     if (land) [pw, ph] = [ph, pw];
   }
-  const page = doc.addPage([pw, ph]);
-  const bw = pw - o.margin * 2;
-  const bh = ph - o.margin * 2;
-  const k = o.placement === 'fill' ? Math.max(bw / iw, bh / ih) : Math.min(bw / iw, bh / ih);
+  const bw = Math.max(1, pw - o.margin * 2);
+  const bh = Math.max(1, ph - o.margin * 2);
+  const fit = Math.min(bw / iw, bh / ih);
+  const p = adjust.placement;
+  const k = p ? fit * p.scale : o.placement === 'fill' ? Math.max(bw / iw, bh / ih) : fit;
   const w = iw * k;
   const h = ih * k;
-  page.drawImage(img, { x: o.margin + (bw - w) / 2, y: o.margin + (bh - h) / 2, width: w, height: h });
+  const cx = p ? p.cx * pw : o.margin + bw / 2;
+  const cy = p ? p.cy * ph : o.margin + bh / 2;
+  return { pw, ph, x: cx - w / 2, y: cy - h / 2, w, h, fit };
+}
+
+/** One page holding the picture, laid out the way Images → PDF does it. */
+export function addImagePage(doc: PDFDocument, img: PDFImage, o: ImagePageOptions, adjust: PictureAdjust = {}) {
+  const l = layoutPicture(o, img.width, img.height, adjust);
+  const page = doc.addPage([l.pw, l.ph]);
+  // PDF space runs bottom up, and pdf-lib turns a picture about its own bottom-left corner.
+  const bx = l.x;
+  const by = l.ph - l.y - l.h;
+  switch (adjust.rotate ?? 0) {
+    case 0:
+      page.drawImage(img, { x: bx, y: by, width: l.w, height: l.h });
+      break;
+    case 90:
+      page.drawImage(img, { x: bx, y: by + l.h, width: l.h, height: l.w, rotate: degrees(-90) });
+      break;
+    case 180:
+      page.drawImage(img, { x: bx + l.w, y: by + l.h, width: l.w, height: l.h, rotate: degrees(180) });
+      break;
+    case 270:
+      page.drawImage(img, { x: bx + l.w, y: by, width: l.h, height: l.w, rotate: degrees(90) });
+      break;
+  }
   return page;
 }
