@@ -13,7 +13,7 @@
  */
 
 /** Works on raw RGBA pixels. Returns new pixels, or null to keep the image unchanged. */
-export function liftInkPixels(px: Uint8ClampedArray, w: number, h: number): Uint8ClampedArray | null {
+export function liftInkPixels(px: Uint8ClampedArray, w: number, h: number): Uint8ClampedArray<ArrayBuffer> | null {
   const n = w * h;
   if (!n) return null;
 
