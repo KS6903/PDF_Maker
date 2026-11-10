@@ -44,6 +44,10 @@ contextBridge.exposeInMainWorld('pdfMaker', {
   writePdf: (filePath, bytes) => ipcRenderer.invoke('write-pdf', filePath, bytes),
   /** Ask where to save a PDF, then write it. Resolves { ok, path?, canceled?, error? }. */
   savePdfAs: (name, bytes, nearPath) => ipcRenderer.invoke('save-pdf-as', name, bytes, nearPath || ''),
+  /** Export: ask where to save one file, then write it. Resolves { ok, path?, canceled?, error? }. */
+  saveFileAs: (name, bytes, nearPath) => ipcRenderer.invoke('save-file-as', name, bytes, nearPath || ''),
+  /** Export: ask for a folder and write several files into it. Resolves { ok, folder?, canceled?, error? }. */
+  saveFilesToFolder: (files, nearPath) => ipcRenderer.invoke('save-files-to-folder', files, nearPath || ''),
   /** Read a PDF from disk, e.g. a recent file, so it is current. Resolves bytes or null. */
   readPdf: (filePath) => ipcRenderer.invoke('read-pdf', filePath),
 });

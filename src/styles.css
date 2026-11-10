@@ -2637,10 +2637,11 @@ main.wide .tool-content {
 }
 
 /* ---------- fill-in suggestions & autofill ---------- */
+/* Fill-in boxes stay out of sight until the pointer is over one. */
 .suggest {
   position: absolute;
-  background: rgb(47 111 221 / 0.09);
-  border: 1px dashed rgb(47 111 221 / 0.65);
+  background: transparent;
+  border: 1px dashed transparent;
   border-radius: 3px;
   cursor: text;
   transition: background 0.12s, border-color 0.12s;
@@ -2649,8 +2650,8 @@ main.wide .tool-content {
   cursor: pointer;
 }
 .suggest:hover {
-  background: rgb(47 111 221 / 0.18);
-  border-style: solid;
+  background: rgb(47 111 221 / 0.14);
+  border-color: rgb(47 111 221 / 0.65);
 }
 .ed-workspace:not([data-tool='select']):not([data-tool='text']) .suggest {
   pointer-events: none;

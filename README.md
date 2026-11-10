@@ -56,7 +56,8 @@ The editor keeps several PDFs open at once, each in its own tab with its own edi
 zoom and scroll position. Open more with the **+** button, by dropping files onto the page area,
 or from the home screen. A dot marks unsaved edits, and **Save** (Ctrl+S) writes the tab you're on
 straight back into the file it was opened from, with no dialog. A PDF made in the app asks where
-to go the first time, then saves there. **Save as** (Ctrl+Shift+S) keeps a separate copy. Closing
+to go the first time, then saves there. **Save as** (Ctrl+Shift+S) keeps a separate copy, and **Export** (Ctrl+E) turns the tab, edits
+included, into PNG, JPG or WebP pictures, a Word document, plain text or a PDF copy. Closing
 a tab with unsaved edits asks first. Ctrl+W closes a tab, Ctrl+Tab switches.
 
 Tabs stay until you close them. Quitting the app, or switching to another tool and back,

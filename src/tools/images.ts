@@ -1,7 +1,7 @@
 import { Images, ImageDown, ChevronUp, ChevronDown, X, ImagePlus, FileImage, Move } from 'lucide';
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { h, button, dropzone, withBusy, field, select, numberInput, textInput, toast, errorMessage } from '../lib/ui';
-import { loadJs, rasterizePage, canvasToBlob, parseRanges, pdfOutput, baseName, PAGE_SIZE_OPTIONS, type OutputFile } from '../lib/pdf';
+import { loadJs, rasterizePage, canvasToBlob, parseRanges, pdfOutput, baseName, PAGE_SIZE_OPTIONS, type OutputFile, type PdfSource } from '../lib/pdf';
 import { pictureKind, decodeImage, embedPageImage, addImagePage, layoutPicture, cropPageImage, isCropped, type ImagePageOptions, type PageImage, type PictureAdjust } from '../lib/images';
 import { adjustPicture, pageDrawing } from '../lib/placepicture';
 import { resultsPanel, simpleTool, panel, type Tool } from './common';
@@ -171,6 +171,33 @@ export const imagesToPdfTool: Tool = {
   },
 };
 
+/** Render the chosen pages (all when `pageSpec` is blank) to image files. */
+export async function pdfPagesToImages(
+  src: PdfSource,
+  opts: { format: 'png' | 'jpeg' | 'webp'; dpi: number; quality: number; pages: string },
+  progress: (text: string) => void,
+): Promise<OutputFile[]> {
+  const js = await loadJs(src);
+  try {
+    const idx = parseRanges(opts.pages, js.numPages);
+    const fmt = opts.format;
+    const ext = fmt === 'jpeg' ? 'jpg' : fmt;
+    const files: OutputFile[] = [];
+    for (const [k, i] of idx.entries()) {
+      progress(`Rendering page ${k + 1} of ${idx.length}…`);
+      const page = await js.getPage(i + 1);
+      const canvas = await rasterizePage(page, opts.dpi / 72);
+      const blob = await canvasToBlob(canvas, `image/${fmt}`, opts.quality / 100);
+      canvas.width = canvas.height = 0;
+      page.cleanup();
+      files.push({ name: idx.length === 1 && js.numPages === 1 ? `${baseName(src.name)}.${ext}` : `${baseName(src.name)}-page-${i + 1}.${ext}`, data: blob, type: `image/${fmt}` });
+    }
+    return files;
+  } finally {
+    await js.loadingTask.destroy();
+  }
+}
+
 export const pdfToImagesTool: Tool = {
   id: 'pdf-to-images',
   title: 'PDF → Images',
@@ -204,24 +231,7 @@ export const pdfToImagesTool: Tool = {
       busyLabel: 'Rendering pages…',
       options: () =>
         panel(h('div', { class: 'grid' }, field('Format', format), field('Resolution', dpi), field('Quality (JPG/WebP %)', quality), field('Pages', pages))),
-      run: async (src, progress) => {
-        const js = await loadJs(src);
-        const idx = parseRanges(pages.value, js.numPages);
-        const fmt = format.value;
-        const ext = fmt === 'jpeg' ? 'jpg' : fmt;
-        const files: OutputFile[] = [];
-        for (const [k, i] of idx.entries()) {
-          progress(`Rendering page ${k + 1} of ${idx.length}…`);
-          const page = await js.getPage(i + 1);
-          const canvas = await rasterizePage(page, +dpi.value / 72);
-          const blob = await canvasToBlob(canvas, `image/${fmt}`, +quality.value / 100);
-          canvas.width = canvas.height = 0;
-          page.cleanup();
-          files.push({ name: `${baseName(src.name)}-page-${i + 1}.${ext}`, data: blob, type: `image/${fmt}` });
-        }
-        await js.loadingTask.destroy();
-        return files;
-      },
+      run: (src, progress) => pdfPagesToImages(src, { format: format.value, dpi: +dpi.value, quality: +quality.value, pages: pages.value }, progress),
     });
   },
 };

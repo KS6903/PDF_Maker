@@ -115,54 +115,65 @@ export const extractTool: Tool = {
           ),
         ),
       run: async (src, progress) => {
-        const data = await extractParagraphs(src, pages.value, progress);
-        const byLines = layout.value === 'lines';
-        const pageTexts = data.map((paras) => paras.map((p) => (byLines ? p.map((l) => l.text.trimEnd()).join('\n') : joinPara(p))));
-        const plain = pageTexts.map((p) => p.join('\n\n')).join('\n\n\f\n\n');
-        output.value = plain.replace(/\f/g, '[page break]');
+        const res = await pdfToTextFile(src, { format: format.value, byLines: layout.value === 'lines', pages: pages.value }, progress);
+        output.value = res.plain.replace(/\f/g, '[page break]');
         output.hidden = false;
         copyBtn.hidden = false;
-        if (!plain.replace(/\f/g, '').trim()) {
+        if (!res.file) {
           toast('No text found. This PDF is probably a scan (images only).', 'error');
           return [];
         }
-        const name = baseName(src.name);
-        let file: OutputFile;
-        if (format.value === 'txt') {
-          file = { name: `${name}.txt`, data: new Blob([plain], { type: 'text/plain' }), type: 'text/plain' };
-        } else {
-          const bodySize = median(data.flat().flat().map((l) => l.size)) || 11;
-          const children: Paragraph[] = [];
-          data.forEach((paras, pi) => {
-            paras.forEach((p, k) => {
-              const size = p[0].size;
-              const heading = size > bodySize * 1.25;
-              const text = byLines ? p.map((l) => l.text.trimEnd()) : [joinPara(p)];
-              children.push(
-                new Paragraph({
-                  pageBreakBefore: pi > 0 && k === 0,
-                  spacing: { after: 160 },
-                  children: text.map(
-                    (t, i) => new TextRun({ text: t, bold: heading, size: Math.round(Math.min(Math.max(size, 8), 40) * 2), break: i > 0 ? 1 : 0 }),
-                  ),
-                }),
-              );
-            });
-            if (!paras.length && pi > 0) children.push(new Paragraph({ children: [new PageBreak()] }));
-          });
-          const doc = new Document({ sections: [{ children }] });
-          file = {
-            name: `${name}.docx`,
-            data: await Packer.toBlob(doc),
-            type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          };
-        }
-        return [file];
+        return [res.file];
       },
     });
     el.append(h('div', { class: 'row end' }, copyBtn), output);
   },
 };
+
+/** The text of a PDF as a Word document or a .txt file. `file` is null when there is no text (a scan). */
+export async function pdfToTextFile(
+  src: PdfSource,
+  opts: { format: 'docx' | 'txt'; byLines: boolean; pages: string },
+  progress: (text: string) => void,
+): Promise<{ plain: string; file: OutputFile | null }> {
+  const data = await extractParagraphs(src, opts.pages, progress);
+  const byLines = opts.byLines;
+  const pageTexts = data.map((paras) => paras.map((p) => (byLines ? p.map((l) => l.text.trimEnd()).join('\n') : joinPara(p))));
+  const plain = pageTexts.map((p) => p.join('\n\n')).join('\n\n\f\n\n');
+  if (!plain.replace(/\f/g, '').trim()) return { plain, file: null };
+  const name = baseName(src.name);
+  let file: OutputFile;
+  if (opts.format === 'txt') {
+    file = { name: `${name}.txt`, data: new Blob([plain], { type: 'text/plain' }), type: 'text/plain' };
+  } else {
+    const bodySize = median(data.flat().flat().map((l) => l.size)) || 11;
+    const children: Paragraph[] = [];
+    data.forEach((paras, pi) => {
+      paras.forEach((p, k) => {
+        const size = p[0].size;
+        const heading = size > bodySize * 1.25;
+        const text = byLines ? p.map((l) => l.text.trimEnd()) : [joinPara(p)];
+        children.push(
+          new Paragraph({
+            pageBreakBefore: pi > 0 && k === 0,
+            spacing: { after: 160 },
+            children: text.map(
+              (t, i) => new TextRun({ text: t, bold: heading, size: Math.round(Math.min(Math.max(size, 8), 40) * 2), break: i > 0 ? 1 : 0 }),
+            ),
+          }),
+        );
+      });
+      if (!paras.length && pi > 0) children.push(new Paragraph({ children: [new PageBreak()] }));
+    });
+    const doc = new Document({ sections: [{ children }] });
+    file = {
+      name: `${name}.docx`,
+      data: await Packer.toBlob(doc),
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    };
+  }
+  return { plain, file };
+}
 
 function median(nums: number[]) {
   if (!nums.length) return 0;

@@ -20,6 +20,7 @@ import {
   RefreshCw,
   Save,
   Search,
+  Share,
   Sun,
   X,
 } from 'lucide';
@@ -31,6 +32,7 @@ import { getCustomTab, CUSTOM_TAB_EVENT } from './lib/customtools';
 import { openPdf, download, pdfOutput, baseName, loadJs, renderPage, type PdfSource } from './lib/pdf';
 import { activeDoc, closeDocument, currentSource, getDoc, listDocs, onDocsChange, openDocument, setActive, setDirty, setDocFile } from './lib/documents';
 import { canWriteDisk, rememberPath, writeToDisk, saveAsOnDisk, fileNameOf } from './lib/disk';
+import { exportActive } from './exportdialog';
 import type { AppContext, Tool } from './tools/common';
 import { renderHome, renderAllTools, setShellIntegration } from './home';
 import { editorTool } from './tools/editor';
@@ -413,7 +415,7 @@ function renderDocTabs() {
     ),
   );
   if (!docs.length) docTabs.append(h('span', { class: 'doc-tabs-empty' }, 'No file open'));
-  saveBtn.disabled = saveAsBtn.disabled = printBtn.disabled = !act;
+  saveBtn.disabled = saveAsBtn.disabled = exportBtn.disabled = printBtn.disabled = !act;
 }
 
 let lastActive: string | null = null;
@@ -504,6 +506,9 @@ document.addEventListener('keydown', (e) => {
   } else if (k === 'p') {
     e.preventDefault();
     void printActive();
+  } else if (k === 'e') {
+    e.preventDefault();
+    void exportActive();
   }
 });
 
@@ -517,6 +522,7 @@ const ribbonTabs = h('div', { class: 'ribbon-tabs' });
 const printBtn = button(null, () => void printActive(), { icon: Printer, kind: 'ghost', title: 'Print the open file (Ctrl+P)' });
 const saveBtn = button('Save', () => void saveActive(), { icon: Save, kind: 'primary', title: 'Save your changes into the open file (Ctrl+S)' });
 const saveAsBtn = button(null, () => void saveActive(true), { icon: FileOutput, kind: 'ghost', title: 'Save as a new file (Ctrl+Shift+S)' });
+const exportBtn = button('Export', () => void exportActive(), { icon: Share, kind: 'ghost', title: 'Export as PNG, JPG, WebP, Word, text or a PDF copy (Ctrl+E)' });
 function paintRibbonTabs() {
   ribbonTabs.replaceChildren(
     ...ribbonList().map((t) =>
@@ -563,6 +569,7 @@ const ribbon = h(
   h('div', { class: 'search' }, icon(Search, 16), searchInput, h('kbd', null, 'Ctrl K'), searchResults),
   updatePill,
   printBtn,
+  exportBtn,
   saveAsBtn,
   saveBtn,
 );

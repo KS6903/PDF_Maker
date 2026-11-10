@@ -333,6 +333,60 @@ app.whenReady().then(() => {
     return { ...writeFileSafely(target, bytes), path: target };
   });
 
+  // Export: save a file of a known kind where the user picks, or several into a folder.
+  const EXPORT_KINDS = {
+    pdf: 'PDF',
+    png: 'PNG image',
+    jpg: 'JPG image',
+    webp: 'WebP image',
+    docx: 'Word document',
+    txt: 'Text',
+    zip: 'ZIP archive',
+  };
+  const kindOf = (name) => String(name || '').match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
+  const safeName = (name) => String(name || 'export').replace(/[\\/:*?"<>|]+/g, '_');
+
+  ipcMain.handle('save-file-as', async (e, name, bytes, nearPath) => {
+    const ext = kindOf(name);
+    if (!(bytes instanceof Uint8Array) || !ext || !EXPORT_KINDS[ext]) return { ok: false, error: 'That kind of file can’t be saved.' };
+    const near = typeof nearPath === 'string' && path.isAbsolute(nearPath) ? path.dirname(nearPath) : app.getPath('documents');
+    const owner = BrowserWindow.fromWebContents(e.sender) ?? undefined;
+    const res = await dialog.showSaveDialog(owner, {
+      title: 'Export',
+      defaultPath: path.join(near, safeName(name)),
+      filters: [{ name: EXPORT_KINDS[ext], extensions: [ext] }],
+    });
+    if (res.canceled || !res.filePath) return { ok: false, canceled: true };
+    const target = path.normalize(kindOf(res.filePath) === ext ? res.filePath : `${res.filePath}.${ext}`);
+    if (ext === 'pdf') savedHere.add(target);
+    return { ...writeFileSafely(target, bytes), path: target };
+  });
+
+  ipcMain.handle('save-files-to-folder', async (e, files, nearPath) => {
+    if (!Array.isArray(files) || !files.length) return { ok: false, error: 'Nothing to save.' };
+    for (const f of files) {
+      if (!(f?.bytes instanceof Uint8Array) || !EXPORT_KINDS[kindOf(f.name)]) return { ok: false, error: 'That kind of file can’t be saved.' };
+    }
+    const owner = BrowserWindow.fromWebContents(e.sender) ?? undefined;
+    const res = await dialog.showOpenDialog(owner, {
+      title: `Choose a folder for the ${files.length} files`,
+      buttonLabel: 'Save here',
+      defaultPath: typeof nearPath === 'string' && path.isAbsolute(nearPath) ? path.dirname(nearPath) : app.getPath('documents'),
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (res.canceled || !res.filePaths?.[0]) return { ok: false, canceled: true };
+    const folder = res.filePaths[0];
+    for (const f of files) {
+      // Never overwrite what is already there: number the new file instead.
+      const base = safeName(path.basename(f.name));
+      let target = path.join(folder, base);
+      for (let i = 2; fs.existsSync(target); i++) target = path.join(folder, base.replace(/(\.[^.]+)$/, ` (${i})$1`));
+      const w = writeFileSafely(target, f.bytes);
+      if (!w.ok) return { ...w, folder };
+    }
+    return { ok: true, folder };
+  });
+
   ipcMain.handle('read-pdf', (_e, filePath) => {
     const target = pdfPath(filePath);
     try {
