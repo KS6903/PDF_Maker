@@ -231,7 +231,7 @@ export const pdfToImagesTool: Tool = {
       busyLabel: 'Rendering pages…',
       options: () =>
         panel(h('div', { class: 'grid' }, field('Format', format), field('Resolution', dpi), field('Quality (JPG/WebP %)', quality), field('Pages', pages))),
-      run: (src, progress) => pdfPagesToImages(src, { format: format.value, dpi: +dpi.value, quality: +quality.value, pages: pages.value }, progress),
+      run: (src, progress) => pdfPagesToImages(src, { format: format.value as 'png' | 'jpeg' | 'webp', dpi: +dpi.value, quality: +quality.value, pages: pages.value }, progress),
     });
   },
 };

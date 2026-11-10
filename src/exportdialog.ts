@@ -76,9 +76,9 @@ export async function exportActive() {
     { icon: Share },
   );
   if (choice !== 'export') return;
-  last = { format: format.value, dpi: dpi.value, quality: quality.value };
+  const f = format.value as Format;
+  last = { format: f, dpi: dpi.value, quality: quality.value };
 
-  const f = format.value;
   const files = await withBusy('Exporting…', async (progress) => {
     const src = await currentSource(d.id);
     if (!src) return null;

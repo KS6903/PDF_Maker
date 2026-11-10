@@ -115,7 +115,7 @@ export const extractTool: Tool = {
           ),
         ),
       run: async (src, progress) => {
-        const res = await pdfToTextFile(src, { format: format.value, byLines: layout.value === 'lines', pages: pages.value }, progress);
+        const res = await pdfToTextFile(src, { format: format.value as 'docx' | 'txt', byLines: layout.value === 'lines', pages: pages.value }, progress);
         output.value = res.plain.replace(/\f/g, '[page break]');
         output.hidden = false;
         copyBtn.hidden = false;
