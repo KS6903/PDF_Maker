@@ -5,8 +5,8 @@ An all-in-one PDF editor, maker and converter that runs entirely on your compute
 ## Privacy
 
 Every file you open stays on your machine. All processing (editing, converting, merging,
-compressing, encrypting) happens locally, and results are saved only where you choose in the
-Save dialog. Nothing is ever uploaded. This is enforced, not just promised:
+compressing, encrypting) happens locally, and results are saved only to the file you opened or
+a place you choose in the Save dialog. Nothing is ever uploaded. This is enforced, not just promised:
 
 - The desktop app blocks **every** network request from its window.
 - The page's Content-Security-Policy forbids network connections.
@@ -54,8 +54,10 @@ search (Ctrl+K) and an **Open file** button.
 
 The editor keeps several PDFs open at once, each in its own tab with its own edits, undo history,
 zoom and scroll position. Open more with the **+** button, by dropping files onto the page area,
-or from the home screen. A dot marks unsaved edits, **Save PDF** saves the tab you're on, and
-closing a tab with unsaved edits asks first. Ctrl+W closes a tab, Ctrl+Tab switches.
+or from the home screen. A dot marks unsaved edits, and **Save** (Ctrl+S) writes the tab you're on
+straight back into the file it was opened from, with no dialog. A PDF made in the app asks where
+to go the first time, then saves there. **Save as** (Ctrl+Shift+S) keeps a separate copy. Closing
+a tab with unsaved edits asks first. Ctrl+W closes a tab, Ctrl+Tab switches.
 
 Tabs stay until you close them. Quitting the app, or switching to another tool and back,
 keeps every open document, its unsaved edits, zoom and scroll position, all stored on this

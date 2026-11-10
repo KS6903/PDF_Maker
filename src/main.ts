@@ -6,6 +6,7 @@ import {
   CircleArrowUp,
   CircleCheck,
   Download,
+  FileOutput,
   FileText,
   FolderOpen,
   House,
@@ -28,7 +29,8 @@ import { initTheme, getTheme, setTheme, type ThemeMode } from './lib/theme';
 import { CATALOG, RIBBON, byLabel, entryHash, type CatalogEntry } from './lib/catalog';
 import { getCustomTab, CUSTOM_TAB_EVENT } from './lib/customtools';
 import { openPdf, download, pdfOutput, baseName, loadJs, renderPage, type PdfSource } from './lib/pdf';
-import { activeDoc, closeDocument, currentSource, getDoc, listDocs, onDocsChange, openDocument, setActive, setDirty } from './lib/documents';
+import { activeDoc, closeDocument, currentSource, getDoc, listDocs, onDocsChange, openDocument, setActive, setDirty, setDocFile } from './lib/documents';
+import { canWriteDisk, rememberPath, writeToDisk, saveAsOnDisk, fileNameOf } from './lib/disk';
 import type { AppContext, Tool } from './tools/common';
 import { renderHome, renderAllTools, setShellIntegration } from './home';
 import { editorTool } from './tools/editor';
@@ -162,14 +164,38 @@ function currentId() {
   return location.hash.replace(/^#\/?/, '');
 }
 
-/** Save the active tab to disk, with everything done to it so far. */
-async function saveActive() {
+/**
+ * Save the active tab, with everything done to it so far. A file opened from
+ * disk is written straight back over itself; one made in the app asks where to
+ * go the first time and saves there from then on. `asNew` always asks.
+ */
+async function saveActive(asNew = false) {
   const d = activeDoc();
   if (!d) return toast('Open a PDF first.');
   const src = await withBusy('Saving PDF…', () => currentSource(d.id));
-  if (!src) return;
-  download(pdfOutput(baseName(d.src.name), src.bytes));
+  if (!src || !getDoc(d.id)) return;
+  if (!canWriteDisk) {
+    download(pdfOutput(baseName(d.src.name), src.bytes));
+    setDirty(d.id, false);
+    return;
+  }
+  const here = d.src.path;
+  if (here && !asNew) {
+    const res = await writeToDisk(here, src.bytes);
+    if (res.ok) {
+      setDirty(d.id, false);
+      return toast(`Saved “${fileNameOf(here)}”.`, 'success');
+    }
+    toast(`Couldn’t save over “${fileNameOf(here)}”. ${res.error ?? ''} Choose where to save it instead.`, 'error');
+  }
+  const res = await saveAsOnDisk(baseName(d.src.name), src.bytes, here);
+  if (!res.ok) {
+    if (!res.canceled) toast(`Couldn’t save the file. ${res.error ?? ''}`, 'error');
+    return;
+  }
+  setDocFile(d.id, res.path, fileNameOf(res.path));
   setDirty(d.id, false);
+  toast(`Saved “${fileNameOf(res.path)}”. Save now writes to this file.`, 'success');
 }
 
 /** Print the active tab's pages (not the app window). */
@@ -387,7 +413,7 @@ function renderDocTabs() {
     ),
   );
   if (!docs.length) docTabs.append(h('span', { class: 'doc-tabs-empty' }, 'No file open'));
-  saveBtn.disabled = printBtn.disabled = !act;
+  saveBtn.disabled = saveAsBtn.disabled = printBtn.disabled = !act;
 }
 
 let lastActive: string | null = null;
@@ -471,7 +497,7 @@ document.addEventListener('keydown', (e) => {
     searchInput.focus();
   } else if (k === 's') {
     e.preventDefault();
-    void saveActive();
+    void saveActive(e.shiftKey);
   } else if (k === 'o') {
     e.preventDefault();
     openInput.click();
@@ -489,7 +515,8 @@ function ribbonList() {
 }
 const ribbonTabs = h('div', { class: 'ribbon-tabs' });
 const printBtn = button(null, () => void printActive(), { icon: Printer, kind: 'ghost', title: 'Print the open file (Ctrl+P)' });
-const saveBtn = button('Save', () => void saveActive(), { icon: Save, kind: 'primary', title: 'Save the open file with all your changes (Ctrl+S)' });
+const saveBtn = button('Save', () => void saveActive(), { icon: Save, kind: 'primary', title: 'Save your changes into the open file (Ctrl+S)' });
+const saveAsBtn = button(null, () => void saveActive(true), { icon: FileOutput, kind: 'ghost', title: 'Save as a new file (Ctrl+Shift+S)' });
 function paintRibbonTabs() {
   ribbonTabs.replaceChildren(
     ...ribbonList().map((t) =>
@@ -536,6 +563,7 @@ const ribbon = h(
   h('div', { class: 'search' }, icon(Search, 16), searchInput, h('kbd', null, 'Ctrl K'), searchResults),
   updatePill,
   printBtn,
+  saveAsBtn,
   saveBtn,
 );
 
@@ -654,6 +682,8 @@ function route() {
 /* ---------- desktop app: PDFs opened via "Open with Folio" ---------- */
 interface DesktopFile {
   name: string;
+  /** Where the file lives on disk, so saving writes back to it. */
+  path?: string;
   data: Uint8Array;
 }
 interface UpdateStatus {
@@ -687,7 +717,11 @@ const PDF_RE = /\.pdf$/i;
 /** Open whatever File Explorer (or "Open with") handed us, in the fitting tool. */
 function handleLaunch(payload: LaunchPayload | null) {
   if (!payload?.files.length) return;
-  const files = payload.files.map((f) => new File([new Uint8Array(f.data) as unknown as BlobPart], f.name, { type: PDF_RE.test(f.name) ? 'application/pdf' : '' }));
+  const files = payload.files.map((f) => {
+    const file = new File([new Uint8Array(f.data) as unknown as BlobPart], f.name, { type: PDF_RE.test(f.name) ? 'application/pdf' : '' });
+    rememberPath(file, f.path);
+    return file;
+  });
   // PDFs to edit open straight into tabs.
   if ((payload.mode === 'edit' || payload.mode === null) && files.every((f) => PDF_RE.test(f.name))) {
     void openFiles(files).then(() => {

@@ -2,6 +2,7 @@ import { ArrowRight, FileText, Trash2, X, Clock, ShieldCheck, MousePointerClick 
 import { h, icon, button, withBusy, formatBytes, toast } from './lib/ui';
 import { openPdf } from './lib/pdf';
 import { listRecent, getRecentBytes, removeRecent, clearRecent } from './lib/recent';
+import { readFromDisk } from './lib/disk';
 import { CATALOG, byLabel, entryHash, type CatalogEntry } from './lib/catalog';
 import type { AppContext, Tool } from './tools/common';
 
@@ -37,7 +38,7 @@ function entryCard(e: CatalogEntry, tools: Tool[], large = false) {
   );
 }
 
-export async function openInEditor(ctx: AppContext, file: File | { name: string; bytes: Uint8Array }) {
+export async function openInEditor(ctx: AppContext, file: File | { name: string; bytes: Uint8Array; path?: string }) {
   const src = await withBusy('Opening PDF…', () => openPdf(file));
   if (src) ctx.openTool('editor', src);
 }
@@ -110,6 +111,9 @@ export function renderHome(ctx: AppContext, tools: Tool[]) {
         null,
         items.map((f) => {
           const open = async () => {
+            // Prefer the file as it is on disk now, so saving it doesn't undo changes made elsewhere.
+            const fresh = f.path ? await readFromDisk(f.path) : null;
+            if (fresh) return void (await openInEditor(ctx, { name: f.name, bytes: fresh, path: f.path }));
             const bytes = await getRecentBytes(f.id);
             if (!bytes) {
               toast('That file is no longer available. Open it again from your computer.', 'error');

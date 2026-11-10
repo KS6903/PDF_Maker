@@ -136,8 +136,37 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 function readPdf(file) {
-  return { name: path.basename(file), data: new Uint8Array(fs.readFileSync(file)) };
+  return { name: path.basename(file), path: path.resolve(file), data: new Uint8Array(fs.readFileSync(file)) };
 }
+
+/** Only whole paths to PDF files are ever read or written for the page. */
+function pdfPath(p) {
+  return typeof p === 'string' && path.isAbsolute(p) && /\.pdf$/i.test(p) ? path.normalize(p) : null;
+}
+
+/**
+ * Write through a temporary file beside the target and then swap it in, so a
+ * failed or interrupted save never leaves a half-written PDF behind.
+ */
+function writeFileSafely(target, bytes) {
+  const tmp = `${target}.${process.pid}.folio-tmp`;
+  try {
+    fs.writeFileSync(tmp, Buffer.from(bytes));
+    fs.renameSync(tmp, target);
+    return { ok: true };
+  } catch (err) {
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch {
+      /* nothing to clean up */
+    }
+    const busy = err?.code === 'EBUSY' || err?.code === 'EPERM' || err?.code === 'EACCES';
+    return { ok: false, error: busy ? 'The file is open in another program, or you don’t have permission to change it.' : String(err?.message ?? err) };
+  }
+}
+
+/** Folders picked in the save dialog this run, so a new file can be saved there too. */
+const savedHere = new Set();
 
 /** Load the requested files, skipping any that can't be read. */
 function readRequest(request) {
@@ -276,6 +305,41 @@ app.whenReady().then(() => {
     const request = launchRequest;
     launchRequest = null;
     return request ? readRequest(request) : null;
+  });
+
+  // Save over the file a tab was opened from. Only an existing PDF, or one
+  // picked in the save dialog this run, can be written this way.
+  ipcMain.handle('write-pdf', (_e, filePath, bytes) => {
+    const target = pdfPath(filePath);
+    if (!target || !(bytes instanceof Uint8Array)) return { ok: false, error: 'That isn’t a PDF file on this computer.' };
+    if (!fs.existsSync(target) && !savedHere.has(target)) return { ok: false, missing: true, error: 'The file is no longer there.' };
+    return writeFileSafely(target, bytes);
+  });
+
+  ipcMain.handle('save-pdf-as', async (e, name, bytes, nearPath) => {
+    if (!(bytes instanceof Uint8Array)) return { ok: false, error: 'Nothing to save.' };
+    const near = pdfPath(nearPath);
+    const file = `${String(name || 'document').replace(/[\\/:*?"<>|]+/g, '_').replace(/\.pdf$/i, '')}.pdf`;
+    const owner = BrowserWindow.fromWebContents(e.sender) ?? undefined;
+    const res = await dialog.showSaveDialog(owner, {
+      title: 'Save PDF',
+      defaultPath: path.join(near ? path.dirname(near) : app.getPath('documents'), file),
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    });
+    if (res.canceled || !res.filePath) return { ok: false, canceled: true };
+    const target = pdfPath(/\.pdf$/i.test(res.filePath) ? res.filePath : `${res.filePath}.pdf`);
+    if (!target) return { ok: false, error: 'Choose a place on this computer.' };
+    savedHere.add(target);
+    return { ...writeFileSafely(target, bytes), path: target };
+  });
+
+  ipcMain.handle('read-pdf', (_e, filePath) => {
+    const target = pdfPath(filePath);
+    try {
+      return target && fs.existsSync(target) ? new Uint8Array(fs.readFileSync(target)) : null;
+    } catch {
+      return null;
+    }
   });
 
   // File Explorer right-click entries, added per user, no admin rights needed.

@@ -57,7 +57,7 @@ function emit() {
 
 /** Open a file in a new tab and make it the active one. The same file twice just switches to it. */
 export function openDocument(src: PdfSource): OpenDoc {
-  const same = docs.find((d) => d.src.name === src.name && d.src.bytes.byteLength === src.bytes.byteLength);
+  const same = docs.find((d) => (src.path && d.src.path ? d.src.path.toLowerCase() === src.path.toLowerCase() : d.src.name === src.name && d.src.bytes.byteLength === src.bytes.byteLength));
   if (same) {
     activeId = same.id;
     emit();
@@ -90,11 +90,19 @@ export function setDirty(id: string, dirty: boolean) {
   emit();
 }
 
+/** The tab now lives at `path` on disk (after Save as), under that file's name. */
+export function setDocFile(id: string, path: string, name: string) {
+  const d = getDoc(id);
+  if (!d) return;
+  d.src = { ...d.src, path, name };
+  emit();
+}
+
 /** Put a tool's result into the tab, in place of what was there. */
 export function replaceDocument(id: string, src: PdfSource) {
   const d = getDoc(id);
   if (!d) return;
-  d.src = { ...plain(src), name: d.src.name };
+  d.src = { ...plain(src), name: d.src.name, path: d.src.path };
   d.version++;
   d.dirty = true;
   emit();

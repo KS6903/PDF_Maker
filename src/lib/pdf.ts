@@ -20,6 +20,7 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import JSZip from 'jszip';
 import { askPassword } from './ui';
 import { addRecent } from './recent';
+import { diskPath } from './disk';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -48,6 +49,8 @@ export interface PdfSource {
   pageCount: number;
   /** Set when this is an open tab's file, so a tool's result can be applied back to that tab. */
   docId?: string;
+  /** Where the file lives on this computer, so Save can write straight back to it. */
+  path?: string;
 }
 
 export async function readFile(file: File) {
@@ -62,17 +65,18 @@ export function baseName(name: string) {
  * Opens a PDF with pdf.js (which verifies passwords reliably), prompting for a
  * password if needed. Returns null when the user cancels the prompt.
  */
-export async function openPdf(file: File | { name: string; bytes: Uint8Array }): Promise<PdfSource | null> {
+export async function openPdf(file: File | { name: string; bytes: Uint8Array; path?: string }): Promise<PdfSource | null> {
   const bytes = file instanceof File ? await readFile(file) : file.bytes;
+  const path = file instanceof File ? diskPath(file) : file.path;
   let password: string | undefined;
   let retry = false;
   for (;;) {
     try {
       const doc = await pdfjs.getDocument(docParams(bytes.slice(), password)).promise;
-      const src: PdfSource = { name: file.name, bytes, password, pageCount: doc.numPages };
+      const src: PdfSource = { name: file.name, bytes, password, pageCount: doc.numPages, path };
       await doc.loadingTask.destroy();
       // Files the user picked themselves show up under "Recent" on the home screen.
-      if (file instanceof File) void addRecent(file.name, bytes, doc.numPages);
+      if (file instanceof File) void addRecent(file.name, bytes, doc.numPages, path);
       return src;
     } catch (err) {
       if ((err as { name?: string }).name !== 'PasswordException') throw err;

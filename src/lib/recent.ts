@@ -14,6 +14,8 @@ export interface RecentFile {
   size: number;
   pages: number;
   openedAt: number;
+  /** Where it lives on this computer, so reopening it saves back to the same file. */
+  path?: string;
 }
 
 const META = STORES.recentMeta;
@@ -31,12 +33,12 @@ export async function listRecent(): Promise<RecentFile[]> {
   }
 }
 
-export async function addRecent(name: string, bytes: Uint8Array, pages: number) {
+export async function addRecent(name: string, bytes: Uint8Array, pages: number, path?: string) {
   if (bytes.byteLength > MAX_BYTES) return;
   try {
     // One entry per file name + size, refreshed when reopened.
     const id = `${name}:${bytes.byteLength}`;
-    const meta: RecentFile = { id, name, size: bytes.byteLength, pages, openedAt: Date.now() };
+    const meta: RecentFile = { id, name, size: bytes.byteLength, pages, openedAt: Date.now(), path };
     await run([META, DATA], 'readwrite', (t) => {
       t.objectStore(META).put(meta);
       t.objectStore(DATA).put(bytes.slice(), id);
