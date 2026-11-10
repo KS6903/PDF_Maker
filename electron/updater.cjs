@@ -16,6 +16,10 @@ const isPortable = !!process.env.PORTABLE_EXECUTABLE_FILE;
 
 let getWindow = () => null;
 let status = { state: 'idle' };
+/** The user pressed Restart: install on the next quit and reopen afterwards. */
+let restartRequested = false;
+/** The installer has been started; never start a second one. */
+let installStarted = false;
 
 /*
  * Whether updates install on their own. Kept next to the app's own data rather
@@ -72,7 +76,6 @@ function setupUpdater(windowGetter) {
     saveSettings();
     if (app.isPackaged) {
       autoUpdater.autoDownload = autoUpdate && !isPortable;
-      autoUpdater.autoInstallOnAppQuit = autoUpdate;
     }
     setStatus(status);
     if (autoUpdate && app.isPackaged && status.state !== 'ready' && status.state !== 'downloading') void check(false);
@@ -90,10 +93,16 @@ function setupUpdater(windowGetter) {
     return status;
   });
 
-  // Restart into the new version. Silent, so no setup wizard appears.
+  // Restart into the new version. This only asks the app to quit; the
+  // installer starts once every window has really closed (see 'quit' below).
+  // Starting it first, as quitAndInstall does, lets it run while the app is
+  // still open asking about unsaved tabs, and a second click then reset
+  // electron-updater's guard so a second installer ran on quit and
+  // uninstalled the copy the first one had just put in.
   ipcMain.handle('install-update', () => {
     if (status.state !== 'ready') return false;
-    autoUpdater.quitAndInstall(true, true);
+    restartRequested = true;
+    app.quit();
     return true;
   });
 
@@ -101,7 +110,19 @@ function setupUpdater(windowGetter) {
   if (!app.isPackaged) return;
 
   autoUpdater.autoDownload = autoUpdate && !isPortable;
-  autoUpdater.autoInstallOnAppQuit = autoUpdate;
+  // Installing on quit is done here, not by electron-updater, so it happens once.
+  autoUpdater.autoInstallOnAppQuit = false;
+
+  // Runs only when the quit actually goes ahead: a close kept open by the
+  // unsaved-changes question never gets here, and 'quit' fires once.
+  app.once('quit', (_e, exitCode) => {
+    if (status.state !== 'ready' || isPortable || installStarted) return;
+    if (!restartRequested && (!autoUpdate || exitCode !== 0)) return;
+    installStarted = true;
+    // (isSilent, isForceRunAfter): silent skips the setup pages and keeps the
+    // install folder; reopen the app only when the user asked to restart.
+    autoUpdater.install(true, restartRequested);
+  });
   autoUpdater.logger = { info: console.log, warn: console.warn, error: console.error, debug: () => {} };
 
   autoUpdater.on('checking-for-update', () => setStatus({ state: 'checking' }));
@@ -133,9 +154,7 @@ function setupUpdater(windowGetter) {
   autoUpdater.on('download-progress', (p) => setStatus({ ...status, state: 'downloading', percent: Math.round(p.percent) }));
 
   // No dialog: the app shows a Restart button while an update is waiting, and
-  // quitAndInstall runs from there. (isSilent, isForceRunAfter): silent runs
-  // the installer with /S, so it skips the setup pages and reuses the existing
-  // install folder; force-run reopens the app afterwards.
+  // the install runs from the 'quit' handler above.
   autoUpdater.on('update-downloaded', (info) => {
     setStatus({ state: 'ready', version: info.version });
   });
