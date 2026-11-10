@@ -1,6 +1,7 @@
 import { X } from 'lucide';
 import { h, button, textInput, checkbox, icon } from '../lib/ui';
 import { listSignatures, saveSignature, deleteSignature } from '../lib/signatures';
+import { liftInk } from '../lib/inklift';
 
 const SCALE = 3; // backing-store resolution so signatures print crisply
 const MAX_UPLOAD_SIDE = 2400;
@@ -114,7 +115,8 @@ export function signatureDialog(): Promise<string | null> {
           c.height = Math.max(1, Math.round(img.naturalHeight * k));
           c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
           URL.revokeObjectURL(url);
-          void finish(trimCanvas(c));
+          // A photo or scan of a signature: keep the ink, drop the paper.
+          void finish(trimCanvas(liftInk(c)));
         };
         img.src = url;
       },
@@ -248,7 +250,7 @@ export function signatureDialog(): Promise<string | null> {
           'div',
           { class: 'row' },
           button('Clear', () => (mode === 'type' ? ((typed.value = ''), clear()) : clear()), { kind: 'ghost' }),
-          button('Upload image', () => upload.click(), { kind: 'ghost' }),
+          button('Upload image', () => upload.click(), { kind: 'ghost', title: 'A photo or scan of your signature. The paper behind it is removed.' }),
         ),
         h(
           'div',
