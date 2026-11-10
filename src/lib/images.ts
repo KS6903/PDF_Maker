@@ -86,16 +86,20 @@ function canvasOf(w: number, h: number) {
   return c;
 }
 
+function loadImage(url: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error('unreadable'));
+    el.src = url;
+  });
+}
+
 /** Decode with the browser itself. EXIF rotation is applied on the way. */
 async function viaBrowser(bytes: Uint8Array, mime: string, photo: boolean): Promise<PageImage> {
   const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: mime }));
   try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const el = new Image();
-      el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error('unreadable'));
-      el.src = url;
-    });
+    const img = await loadImage(url);
     // SVGs without a size of their own get a sensible one.
     const w = img.naturalWidth || 1200;
     const h = img.naturalHeight || Math.round(w * 0.75);
@@ -244,13 +248,26 @@ export interface Placement {
   scale: number;
   cx: number;
   cy: number;
+  /** Height over width compared with the picture's own shape. Unset keeps its shape. */
+  stretch?: number;
+}
+
+/** How much is cut off each side, as fractions of the upright picture before it is turned. */
+export interface Crop {
+  l: number;
+  t: number;
+  r: number;
+  b: number;
 }
 
 export interface PictureAdjust {
   rotate?: Rotation;
   /** Unset means the page-wide fit or fill choice. */
   placement?: Placement;
+  crop?: Crop;
 }
+
+export const isCropped = (c?: Crop): c is Crop => !!c && c.l + c.t + c.r + c.b > 1e-4;
 
 /** The page and the picture's box on it, in points from the top left. */
 export interface PictureLayout {
@@ -265,11 +282,17 @@ export interface PictureLayout {
   fit: number;
 }
 
-/** Lay out one picture of `px`×`py` pixels on its page. Shared by the preview and the PDF. */
-export function layoutPicture(o: ImagePageOptions, px: number, py: number, adjust: PictureAdjust = {}): PictureLayout {
+/** The picture's own size in points, cropped and then turned, before any stretching. */
+export function pictureSize(px: number, py: number, adjust: PictureAdjust = {}) {
+  const c = adjust.crop;
+  const cw = px * (1 - (c?.l ?? 0) - (c?.r ?? 0));
+  const ch = py * (1 - (c?.t ?? 0) - (c?.b ?? 0));
   const turned = adjust.rotate === 90 || adjust.rotate === 270;
-  const iw = (turned ? py : px) * 0.75; // px → pt at 96 dpi
-  const ih = (turned ? px : py) * 0.75;
+  return { iw: (turned ? ch : cw) * 0.75, ih: (turned ? cw : ch) * 0.75 }; // px → pt at 96 dpi
+}
+
+/** The page for a picture of this shape. Stretching doesn't change it, so a drag never flips the page. */
+function pageFor(o: ImagePageOptions, iw: number, ih: number) {
   let pw: number, ph: number;
   if (o.size === 'fit' || !PAGE_SIZES[o.size]) {
     [pw, ph] = [iw + o.margin * 2, ih + o.margin * 2];
@@ -278,10 +301,16 @@ export function layoutPicture(o: ImagePageOptions, px: number, py: number, adjus
     const land = o.orientation === 'landscape' || (o.orientation === 'auto' && iw > ih);
     if (land) [pw, ph] = [ph, pw];
   }
-  const bw = Math.max(1, pw - o.margin * 2);
-  const bh = Math.max(1, ph - o.margin * 2);
-  const fit = Math.min(bw / iw, bh / ih);
+  return { pw, ph, bw: Math.max(1, pw - o.margin * 2), bh: Math.max(1, ph - o.margin * 2) };
+}
+
+/** Lay out one picture of `px`×`py` pixels on its page. Shared by the preview and the PDF. */
+export function layoutPicture(o: ImagePageOptions, px: number, py: number, adjust: PictureAdjust = {}): PictureLayout {
+  const { iw, ih: own } = pictureSize(px, py, adjust);
+  const { pw, ph, bw, bh } = pageFor(o, iw, own);
   const p = adjust.placement;
+  const ih = own * (p?.stretch ?? 1);
+  const fit = Math.min(bw / iw, bh / ih);
   const k = p ? fit * p.scale : o.placement === 'fill' ? Math.max(bw / iw, bh / ih) : fit;
   const w = iw * k;
   const h = ih * k;
@@ -290,9 +319,54 @@ export function layoutPicture(o: ImagePageOptions, px: number, py: number, adjus
   return { pw, ph, x: cx - w / 2, y: cy - h / 2, w, h, fit };
 }
 
-/** One page holding the picture, laid out the way Images → PDF does it. */
+/** The placement that puts the (cropped, turned) picture exactly in `r`, in points from the page's top left. */
+export function placementFor(o: ImagePageOptions, px: number, py: number, adjust: PictureAdjust, r: { x: number; y: number; w: number; h: number }): Placement {
+  const { iw, ih: own } = pictureSize(px, py, adjust);
+  const { pw, ph, bw, bh } = pageFor(o, iw, own);
+  const stretch = r.h / r.w / (own / iw);
+  const fit = Math.min(bw / iw, bh / (own * stretch));
+  const p: Placement = { scale: r.w / (iw * fit), cx: (r.x + r.w / 2) / pw, cy: (r.y + r.h / 2) / ph };
+  if (Math.abs(stretch - 1) > 1e-3) p.stretch = stretch;
+  return p;
+}
+
+/** How much bigger than "fits inside the margins" the picture must be to cover that area. */
+export function fillScale(o: ImagePageOptions, px: number, py: number, adjust: PictureAdjust) {
+  const { iw, ih: own } = pictureSize(px, py, adjust);
+  const { bw, bh } = pageFor(o, iw, own);
+  const ih = own * (adjust.placement?.stretch ?? 1);
+  return Math.max(bw / iw, bh / ih) / Math.min(bw / iw, bh / ih);
+}
+
+/**
+ * Cut the cropped-off edges out of the picture itself, so they aren't hidden
+ * in the PDF where someone could pull them back out.
+ */
+export async function cropPageImage(img: PageImage, crop?: Crop): Promise<PageImage> {
+  if (!isCropped(crop)) return img;
+  const url = URL.createObjectURL(new Blob([img.bytes as BlobPart], { type: img.type === 'jpg' ? 'image/jpeg' : 'image/png' }));
+  try {
+    const el = await loadImage(url);
+    const W = el.naturalWidth;
+    const H = el.naturalHeight;
+    const sx = Math.round(crop.l * W);
+    const sy = Math.round(crop.t * H);
+    const sw = Math.max(1, Math.round(W * (1 - crop.l - crop.r)));
+    const sh = Math.max(1, Math.round(H * (1 - crop.t - crop.b)));
+    const c = canvasOf(sw, sh);
+    c.getContext('2d')!.drawImage(el, sx, sy, sw, sh, 0, 0, sw, sh);
+    return await canvasToImage(c, img.type === 'jpg');
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/**
+ * One page holding the picture, laid out the way Images → PDF does it. A crop
+ * in `adjust` must already be applied to `img` (see cropPageImage).
+ */
 export function addImagePage(doc: PDFDocument, img: PDFImage, o: ImagePageOptions, adjust: PictureAdjust = {}) {
-  const l = layoutPicture(o, img.width, img.height, adjust);
+  const l = layoutPicture(o, img.width, img.height, { ...adjust, crop: undefined });
   const page = doc.addPage([l.pw, l.ph]);
   // PDF space runs bottom up, and pdf-lib turns a picture about its own bottom-left corner.
   const bx = l.x;

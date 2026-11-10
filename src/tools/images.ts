@@ -2,7 +2,7 @@ import { Images, ImageDown, ChevronUp, ChevronDown, X, ImagePlus, FileImage, Mov
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { h, button, dropzone, withBusy, field, select, numberInput, textInput, toast, errorMessage } from '../lib/ui';
 import { loadJs, rasterizePage, canvasToBlob, parseRanges, pdfOutput, baseName, PAGE_SIZE_OPTIONS, type OutputFile } from '../lib/pdf';
-import { pictureKind, decodeImage, embedPageImage, addImagePage, layoutPicture, type ImagePageOptions, type PageImage, type PictureAdjust } from '../lib/images';
+import { pictureKind, decodeImage, embedPageImage, addImagePage, layoutPicture, cropPageImage, isCropped, type ImagePageOptions, type PageImage, type PictureAdjust } from '../lib/images';
 import { adjustPicture, pageDrawing } from '../lib/placepicture';
 import { resultsPanel, simpleTool, panel, type Tool } from './common';
 
@@ -76,7 +76,7 @@ export const imagesToPdfTool: Tool = {
     );
     const name = textInput('images', 'File name');
     const build = button('Create PDF', () => run(), { icon: FileImage, kind: 'primary', disabled: true });
-    const hint = h('p', { class: 'muted small' }, 'Click a page, or its ', h('strong', null, 'Adjust'), ' button, to resize, move or turn that picture. Pictures you have adjusted keep their size and spot when you change the settings above.');
+    const hint = h('p', { class: 'muted small' }, 'Click a page, or its ', h('strong', null, 'Adjust'), ' button, to crop, resize, move or turn that picture. Pictures you have adjusted keep their size and spot when you change the settings above.');
     const options = panel(
       h('div', { class: 'grid' }, field('Page size', size), field('Orientation', orient), field('Margin (pt)', margin), field('Image placement', fitMode, 'For pictures you haven’t adjusted'), field('File name', name)),
       hint,
@@ -116,18 +116,18 @@ export const imagesToPdfTool: Tool = {
       list.replaceChildren(
         ...items.map((it, i) => {
           const drawing = pageDrawing(it);
-          drawing.draw(layoutPicture(o, it.px, it.py, it.adjust), o, it.adjust.rotate ?? 0);
+          drawing.draw(layoutPicture(o, it.px, it.py, it.adjust), o, it.adjust);
           drawing.svg.setAttribute('aria-label', `${it.name} on its page`);
-          const adjusted = !!it.adjust.placement || !!it.adjust.rotate;
+          const adjusted = !!it.adjust.placement || !!it.adjust.rotate || isCropped(it.adjust.crop);
           return h(
             'figure',
             { class: 'image-card' },
-            h('button', { type: 'button', class: 'image-thumb', title: 'Resize, move or turn this picture', onclick: () => void adjust(it) }, drawing.svg),
+            h('button', { type: 'button', class: 'image-thumb', title: 'Crop, resize, move or turn this picture', onclick: () => void adjust(it) }, drawing.svg),
             h('figcaption', { title: it.name }, `${i + 1}. ${it.name}`, adjusted ? h('span', { class: 'image-badge' }, 'Adjusted') : null),
             h(
               'div',
               { class: 'image-actions' },
-              button('Adjust', () => void adjust(it), { icon: Move, title: 'Resize, move or turn this picture', kind: 'ghost' }),
+              button('Adjust', () => void adjust(it), { icon: Move, title: 'Crop, resize, move or turn this picture', kind: 'ghost' }),
               button(null, () => move(i, -1), { icon: ChevronUp, title: 'Move earlier', kind: 'ghost', disabled: i === 0 }),
               button(null, () => move(i, 1), { icon: ChevronDown, title: 'Move later', kind: 'ghost', disabled: i === items.length - 1 }),
               button(null, () => {
@@ -155,7 +155,7 @@ export const imagesToPdfTool: Tool = {
         const doc = await PDFDocument.create();
         for (const [i, it] of items.entries()) {
           p(`Adding image ${i + 1} of ${items.length}…`);
-          addImagePage(doc, await embedPageImage(doc, it.img), o, it.adjust);
+          addImagePage(doc, await embedPageImage(doc, await cropPageImage(it.img, it.adjust.crop)), o, it.adjust);
         }
         return doc.save();
       });
