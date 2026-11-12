@@ -6,7 +6,7 @@ import { pictureKind, decodeImage, embedPageImage, addImagePage, layoutPicture, 
 import { adjustPicture, pageDrawing } from '../lib/placepicture';
 import { resultsPanel, simpleTool, panel, type Tool } from './common';
 
-interface ImgItem {
+export interface ImgItem {
   name: string;
   img: PageImage;
   url: string;
@@ -17,7 +17,7 @@ interface ImgItem {
 }
 
 /** Read picture files into ready-to-place items. Files that aren't pictures are named in one message. */
-async function readPictures(files: File[]): Promise<ImgItem[]> {
+export async function readPictures(files: File[]): Promise<ImgItem[]> {
   const out: ImgItem[] = [];
   const refused: string[] = [];
   for (const f of files) {

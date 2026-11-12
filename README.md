@@ -25,6 +25,7 @@ a place you choose in the Save dialog. Nothing is ever uploaded. This is enforce
 | | **Measure objects** | Distance, perimeter and area at any scale (e.g. 1 in = 10 ft), with a "set scale" from a known length. Measurements can be saved onto the page. |
 | | **Use a certificate** | Sign with a digital ID: load a `.pfx`/`.p12` or create a self-signed one. Signatures are PKCS#7, added as an incremental update so earlier signatures stay valid, with an optional visible box. Existing signatures are checked for changes since signing. |
 | | **Add rich media** | Embed a video, sound or any file on a page, shown with a poster frame; it opens in the computer's own player. Lists and saves files already attached. |
+| | **Transform pictures** | Free transform for photos: move, resize, turn, flip, slant, distort and add perspective, to one picture or several at once. Combine pictures side by side, stacked, in a grid or on top of each other, then save them as PNG, JPG or WebP or send them to Images → PDF. |
 | Organize | **Organize pages** | Drag to reorder, rotate, delete, duplicate, insert blank pages, append another PDF. |
 | | **Merge PDFs** | Combine files in any order, with optional page ranges per file. |
 | | **Split & extract** | Extract pages, split by ranges, every N pages, or one file per page. |
@@ -81,6 +82,25 @@ computer.
   off.
 
 All of this is stored only in this computer's local storage and can be cleared from the app.
+
+## Transforming pictures
+
+- **One canvas per picture.** Each picture you add opens on a canvas of its own, listed on the left.
+  Drop more pictures on the list for new canvases, or on the canvas to put them onto it.
+- **Free transform.** Drag inside to move (it snaps to the canvas edges and middle; Alt places freely),
+  a corner to resize in proportion (Shift sizes freely, Alt from the centre), a side to stretch, and
+  just outside a corner or the knob on top to turn (Shift turns in 15° steps). Ctrl on a corner
+  distorts, Ctrl on a side slants. **Skew**, **Distort** and **Perspective** modes do the same
+  without a key held. Position, size and angle can also be typed, and there's opacity, flip,
+  quarter turns, Fit canvas, Centre, Straighten and Actual size.
+- **Many at once.** Shift-click, drag a box or press Ctrl+A to select several pictures; they move,
+  turn and distort together in one frame.
+- **Combine.** Tick pictures in the list and press Combine to put them on a new canvas, side by
+  side, one above the other, in a grid or on top of each other, optionally at the same height. The
+  originals stay, and everything on the new canvas is still editable.
+- **Save.** Save one, the ticked or all canvases as PNG, JPG or WebP at 25-200%, or send them to
+  Images → PDF. Canvases stay while you use other tools, and closing Folio with unsaved ones asks
+  first.
 
 ## Windows app
 

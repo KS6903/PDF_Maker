@@ -45,6 +45,7 @@ import { splitTool } from './tools/split';
 import { compressTool } from './tools/compress';
 import { createTool } from './tools/create';
 import { imagesToPdfTool, pdfToImagesTool } from './tools/images';
+import { picturesTool } from './tools/pictures';
 import { extractTool } from './tools/extract';
 import { protectTool, unlockTool } from './tools/protect';
 import { metadataTool } from './tools/metadata';
@@ -76,6 +77,7 @@ const TOOLS: Tool[] = [
   createTool,
   imagesToPdfTool,
   pdfToImagesTool,
+  picturesTool,
   extractTool,
   protectTool,
   unlockTool,
@@ -851,8 +853,8 @@ if (desktop) {
       title: 'Unsaved changes',
       message:
         names.length === 1
-          ? `“${names[0]}” has edits that haven’t been saved to a PDF yet.`
-          : `${names.length} documents have edits that haven’t been saved to a PDF yet.`,
+          ? `“${names[0]}” has changes that haven’t been saved yet.`
+          : `${names.length} files have changes that haven’t been saved yet.`,
       items: names.length > 1 ? names : undefined,
       detail: 'Closing Folio now loses them.',
       confirm: 'Close anyway',

@@ -3307,3 +3307,458 @@ input.index-search {
   color: inherit;
   border-radius: 2px;
 }
+
+/* ---------- transform pictures ---------- */
+.pt-intro-text {
+  max-width: 640px;
+  margin: -8px 0 20px;
+}
+.pt-bar .btn {
+  height: 32px;
+}
+.pt-seg {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  background: var(--sunken);
+  border-radius: var(--radius-sm);
+}
+.pt-seg-btn {
+  height: 30px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.pt-seg-btn:hover {
+  color: var(--text);
+}
+.pt-seg-btn[aria-checked='true'] {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+}
+.pt-bar .tool-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  background: transparent;
+}
+.pt-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.pt-sheets,
+.pt-props {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  overflow-y: auto;
+}
+.pt-sheets {
+  width: 212px;
+  border-right: 1px solid var(--border);
+}
+.pt-sheets.over {
+  box-shadow: inset 0 0 0 2px var(--focus);
+}
+.pt-props {
+  width: 252px;
+  border-left: 1px solid var(--border);
+  padding: 4px 0 16px;
+}
+.pt-pane-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pt-pane-head h3 {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.pt-pane-head .pt-text-btn {
+  margin-left: auto;
+}
+.pt-sheets > .pt-pane-head {
+  padding: 12px 12px 8px;
+}
+.pt-text-btn {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 2px 4px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.pt-text-btn:hover {
+  background: var(--accent-soft);
+}
+.pt-sheet-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 10px 10px;
+}
+.pt-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.pt-sheet:hover {
+  border-color: var(--border-strong);
+}
+.pt-sheet.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.pt-sheet.ticked {
+  background: var(--accent-soft);
+}
+.pt-sheet:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.pt-thumb {
+  height: 96px;
+  border-radius: 4px;
+  background: var(--sunken);
+  overflow: hidden;
+}
+.pt-mini {
+  position: relative;
+  overflow: hidden;
+  pointer-events: none;
+}
+.pt-mini-canvas {
+  position: absolute;
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+.pt-sheet-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.pt-sheet-meta input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  flex: none;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.pt-sheet-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pt-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.pt-sheet-tools {
+  display: none;
+  flex: none;
+}
+.pt-sheet:hover .pt-sheet-tools,
+.pt-sheet:focus-within .pt-sheet-tools,
+.pt-sheet.active .pt-sheet-tools {
+  display: flex;
+}
+.pt-sheet-tools .mini {
+  width: 22px;
+  height: 22px;
+}
+.pt-sheet-size {
+  font-size: 11.5px;
+  padding-left: 21px;
+}
+.pt-sheet-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+.pt-sheet-actions .btn {
+  width: 100%;
+  padding: 0 8px;
+}
+.pt-row {
+  display: flex;
+  gap: 6px;
+}
+.pt-row .btn {
+  flex: 1;
+}
+
+.pt-stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--sunken);
+  touch-action: none;
+  user-select: none;
+  outline: none;
+}
+.pt-stage.over,
+.pt-stage:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--focus);
+}
+.pt-canvas,
+.pt-bounds {
+  position: absolute;
+  pointer-events: none;
+}
+.checker {
+  background-color: var(--surface);
+  background-image: conic-gradient(var(--border) 25%, transparent 0 50%, var(--border) 0 75%, transparent 0);
+  background-size: 16px 16px;
+}
+.pt-mini-canvas.checker {
+  background-size: 8px 8px;
+}
+.pt-canvas {
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.12), 0 6px 20px rgb(0 0 0 / 0.08);
+}
+/* Whatever hangs off the canvas shows faintly, since it won't be saved. */
+.pt-bounds {
+  box-shadow: 0 0 0 100000px color-mix(in srgb, var(--sunken) 80%, transparent);
+  outline: 1px solid var(--border-strong);
+}
+.pt-layers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.pt-img {
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: none;
+  max-height: none;
+  transform-origin: 0 0;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.pt-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+.pt-frame {
+  fill: none;
+  stroke: var(--focus);
+  stroke-width: 1.5;
+}
+.pt-outline {
+  fill: none;
+  stroke: var(--focus);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  opacity: 0.8;
+}
+.pt-handle {
+  fill: #fff;
+  stroke: var(--focus);
+  stroke-width: 1.5;
+}
+.pt-knob {
+  fill: var(--focus);
+  stroke: #fff;
+}
+.pt-guide {
+  stroke: #e0559a;
+  stroke-width: 1;
+}
+.pt-marquee {
+  fill: color-mix(in srgb, var(--focus) 10%, transparent);
+  stroke: var(--focus);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.pt-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.pt-section h3 {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pt-props > .muted {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.pt-grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 8px;
+  align-items: center;
+}
+.pt-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.pt-field > span {
+  flex: none;
+  width: 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-align: center;
+}
+.pt-field.wide > span {
+  width: auto;
+}
+.pt-field input {
+  min-height: 30px;
+  padding: 4px 7px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.pt-link {
+  width: 30px;
+  height: 30px;
+  justify-self: start;
+}
+.pt-opacity {
+  display: grid;
+  grid-template-columns: auto 1fr 38px;
+  align-items: center;
+  gap: 8px;
+}
+.pt-range {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.pt-range-val {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.pt-btn-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+.pt-btn-grid .btn {
+  height: 30px;
+  padding: 0 6px;
+  justify-content: flex-start;
+  font-size: 12.5px;
+  color: var(--text);
+}
+.pt-btn-grid .btn svg {
+  color: var(--muted);
+  flex: none;
+}
+.pt-bg-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pt-bg-row select {
+  flex: 1;
+  min-height: 30px;
+  padding: 4px 7px;
+}
+.pt-color {
+  flex: none;
+  width: 36px !important;
+  height: 30px !important;
+}
+.pt-layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pt-layer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.pt-layer:hover {
+  background: var(--sunken);
+}
+.pt-layer.selected {
+  background: var(--accent-soft);
+}
+.pt-layer:focus-visible {
+  outline: 2px solid var(--focus);
+}
+.pt-layer.hidden-layer .pt-layer-thumb,
+.pt-layer.hidden-layer .pt-layer-name {
+  opacity: 0.45;
+}
+.pt-layer-thumb {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  object-fit: contain;
+  background: var(--sunken);
+  border-radius: 4px;
+}
+.pt-layer-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1100px) {
+  .pt-sheets {
+    width: 168px;
+  }
+  .pt-props {
+    width: 216px;
+  }
+}

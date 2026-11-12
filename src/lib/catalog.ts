@@ -16,6 +16,7 @@ import {
   Info,
   LayoutGrid,
   LockOpen,
+  Move3d,
   Printer,
   Ruler,
   ScanText,
@@ -59,6 +60,7 @@ export const CATALOG: CatalogEntry[] = [
   { label: 'Add a password', icon: ShieldCheck, color: '#6d5ef0', tool: 'protect' },
   { label: 'Redact a PDF', icon: SquareSlash, color: '#e0559a', tool: 'redact' },
   { label: 'Add a watermark', icon: Stamp, color: '#8e4ec6', tool: 'watermark' },
+  { label: 'Transform pictures', icon: Move3d, color: '#0891b2', tool: 'pictures' },
 
   { label: 'Add page numbers', icon: Hash, color: '#d97706', tool: 'page-numbers', more: true },
   { label: 'Images to PDF', icon: Images, color: '#0891b2', tool: 'images-to-pdf', more: true },
@@ -106,8 +108,8 @@ export const RENAMED: Record<string, string> = {
 /** Ribbon tabs. Each lists the catalog labels it shows. */
 export const RIBBON: { id: string; label: string; entries: string[] }[] = [
   { id: 'tools', label: 'All tools', entries: [] },
-  { id: 'edit', label: 'Edit', entries: ['Edit a PDF', 'Organize pages', 'Add a watermark', 'Add page numbers', 'Redact a PDF', 'Measure distances', 'Embed video or files'] },
-  { id: 'convert', label: 'Convert', entries: ['Create a PDF', 'Combine PDFs', 'Split a PDF', 'Compress a PDF', 'PDF to images', 'Images to PDF', 'PDF to text or Word', 'Recognize text (OCR)', 'Convert to PDF/A'] },
+  { id: 'edit', label: 'Edit', entries: ['Edit a PDF', 'Transform pictures', 'Organize pages', 'Add a watermark', 'Add page numbers', 'Redact a PDF', 'Measure distances', 'Embed video or files'] },
+  { id: 'convert', label: 'Convert', entries: ['Create a PDF', 'Combine PDFs', 'Split a PDF', 'Compress a PDF', 'PDF to images', 'Images to PDF', 'Transform pictures', 'PDF to text or Word', 'Recognize text (OCR)', 'Convert to PDF/A'] },
   { id: 'sign', label: 'Sign & protect', entries: ['Fill in a form', 'Sign with a digital ID', 'Add a password', 'Remove a password'] },
 ];
 
