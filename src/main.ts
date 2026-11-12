@@ -15,6 +15,8 @@ import {
   Monitor,
   Moon,
   PanelLeft,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Printer,
   RefreshCw,
@@ -558,7 +560,7 @@ paintRibbonTabs();
 
 const panelToggle = h(
   'button',
-  { type: 'button', class: 'appbar-btn icon-only', title: 'Show or hide the tools panel', 'aria-label': 'Show or hide the tools panel', onclick: () => setPanelOpen(panel.hidden === true) },
+  { type: 'button', class: 'appbar-btn icon-only', title: 'Show or hide the tools panel', 'aria-label': 'Show or hide the tools panel', onclick: () => setPanelOpen(panel.classList.contains('collapsed')) },
   icon(PanelLeft, 18),
 );
 
@@ -582,6 +584,8 @@ const panelTitle = h('h2', null, 'All tools');
 let showMore = false;
 const moreBtn = h('button', { type: 'button', class: 'view-more', onclick: () => ((showMore = !showMore), renderPanel()) });
 
+const panelClose = h('button', { type: 'button', class: 'panel-close', onclick: () => setPanelOpen(panel.classList.contains('collapsed')) });
+
 const panel = h(
   'aside',
   { class: 'toolpanel', 'aria-label': 'All tools' },
@@ -589,14 +593,19 @@ const panel = h(
     'div',
     { class: 'panel-head' },
     panelTitle,
-    h('button', { type: 'button', class: 'panel-close', title: 'Close', 'aria-label': 'Close the tools panel', onclick: () => setPanelOpen(false) }, icon(X, 16)),
+    panelClose,
   ),
   panelList,
 );
 
+/** Closing the panel shrinks it to a strip of tool icons rather than hiding it. */
 function setPanelOpen(open: boolean) {
-  panel.hidden = !open;
+  panel.classList.toggle('collapsed', !open);
   panelToggle.setAttribute('aria-pressed', String(open));
+  const label = open ? 'Collapse the tools panel to icons' : 'Expand the tools panel';
+  panelClose.title = label;
+  panelClose.setAttribute('aria-label', label);
+  panelClose.replaceChildren(icon(open ? PanelLeftClose : PanelLeftOpen, 16));
 }
 
 function entryIcon(e: CatalogEntry, size = 20) {
@@ -608,7 +617,7 @@ function entryRow(e: CatalogEntry) {
   const current = location.hash.replace(/^#\/?/, '');
   return h(
     'a',
-    { class: `panel-item${target === `#/${current}` ? ' active' : ''}`, href: target },
+    { class: `panel-item${target === `#/${current}` ? ' active' : ''}`, href: target, title: e.label, 'aria-label': e.label },
     entryIcon(e),
     h('span', { class: 'panel-label' }, e.label),
   );
@@ -623,6 +632,7 @@ function renderPanel() {
   }
   const shown = showMore ? CATALOG : CATALOG.filter((e) => !e.more);
   moreBtn.replaceChildren(h('span', null, showMore ? 'View less' : 'View more'), icon(showMore ? ChevronUp : ChevronDown, 14));
+  moreBtn.title = showMore ? 'View fewer tools' : 'View more tools';
   panelList.replaceChildren(...shown.map(entryRow), moreBtn);
 }
 

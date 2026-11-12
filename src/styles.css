@@ -136,9 +136,6 @@ a {
   min-height: 0;
   background: var(--bg);
 }
-.workarea > .toolpanel[hidden] {
-  display: none !important;
-}
 
 main {
   /*
@@ -1745,7 +1742,11 @@ main.wide .tool-content {
     border-right: 0;
     border-bottom: 1px solid var(--border);
   }
-  .toolpanel:not([hidden]) + main {
+  .toolpanel:not(.collapsed) + main {
+    display: none;
+  }
+  /* No room for a strip of icons above the page, so collapsed means gone here. */
+  .toolpanel.collapsed {
     display: none;
   }
   .search kbd,
@@ -2383,6 +2384,33 @@ main.wide .tool-content {
 }
 .view-more:hover {
   color: var(--accent-hover);
+}
+
+/* Collapsed: a narrow strip that still shows every tool's icon. */
+.toolpanel.collapsed {
+  width: 56px;
+}
+.toolpanel.collapsed .panel-head {
+  justify-content: center;
+  padding: 10px 0 6px;
+}
+.toolpanel.collapsed .panel-head h2,
+.toolpanel.collapsed .panel-label,
+.toolpanel.collapsed .view-more span {
+  display: none;
+}
+.toolpanel.collapsed .panel-list {
+  padding: 0 6px 16px;
+  scrollbar-width: none;
+}
+.toolpanel.collapsed .panel-item {
+  justify-content: center;
+  padding: 4px;
+}
+.toolpanel.collapsed .view-more {
+  align-self: center;
+  margin: 6px 0 0;
+  padding: 6px;
 }
 
 .search {
@@ -3752,6 +3780,54 @@ input.index-search {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.pt-sheet-list,
+.pt-layer-list {
+  position: relative;
+}
+/* Dragging a picture or layer into a new place in its list. */
+.pt-sorting {
+  user-select: none;
+  cursor: grabbing;
+}
+.pt-sorting * {
+  cursor: grabbing !important;
+}
+.pt-dragging {
+  position: relative;
+  z-index: 2;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+  opacity: 0.92;
+  pointer-events: none;
+}
+.pt-drop-line {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--focus);
+  pointer-events: none;
+}
+.pt-save-custom {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pt-save-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--sunken);
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+}
+.pt-save-info.error .pt-save-est {
+  color: var(--danger, #c0392b);
 }
 
 @media (max-width: 1100px) {

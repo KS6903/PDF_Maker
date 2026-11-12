@@ -38,7 +38,7 @@ import {
   Move3d,
   type IconNode,
 } from 'lucide';
-import { h, button, icon, dropzone, withBusy, toast, modal, field, select, numberInput, checkbox, confirmDiscard, textInput } from '../lib/ui';
+import { h, button, icon, dropzone, withBusy, toast, modal, field, select, numberInput, checkbox, confirmDiscard, textInput, formatBytes } from '../lib/ui';
 import { canvasToBlob, download, zipOutputs, type OutputFile } from '../lib/pdf';
 import { canWriteDisk, exportFile, exportFiles, fileNameOf } from '../lib/disk';
 import { setUnsavedGuard } from '../lib/unsaved';
@@ -139,11 +139,11 @@ const deg = (r: number) => (r * 180) / Math.PI;
 const angleOf = (q: Quad) => Math.atan2(q[1].y - q[0].y, q[1].x - q[0].x);
 const round1 = (v: number) => Math.round(v * 10) / 10;
 
-/** Draw a sheet into a canvas, `scale` times its own size. */
-export function renderSheet(s: Snap, scale = 1, background?: string): HTMLCanvasElement {
+/** Draw a sheet into a canvas, `sx` times its own width and `sy` times its height. */
+export function renderSheet(s: Snap, sx = 1, sy = sx, background?: string): HTMLCanvasElement {
   const c = document.createElement('canvas');
-  c.width = Math.max(1, Math.round(s.w * scale));
-  c.height = Math.max(1, Math.round(s.h * scale));
+  c.width = Math.max(1, Math.round(s.w * sx));
+  c.height = Math.max(1, Math.round(s.h * sy));
   const g = c.getContext('2d')!;
   const bg = s.bg !== 'none' ? s.bg : background;
   if (bg) {
@@ -153,7 +153,7 @@ export function renderSheet(s: Snap, scale = 1, background?: string): HTMLCanvas
   for (const l of s.layers) {
     if (l.hidden) continue;
     const m = layerMatrix(l);
-    if (m) drawMapped(g, l.photo.img, l.photo.px, l.photo.py, mul(scaling(scale, scale), m), l.opacity);
+    if (m) drawMapped(g, l.photo.img, l.photo.px, l.photo.py, mul(scaling(c.width / s.w, c.height / s.h), m), l.opacity);
   }
   return c;
 }
@@ -177,6 +177,159 @@ function miniSheet(s: Sheet, w: number, hh: number) {
       return img;
     });
   return h('div', { class: 'pt-mini', style: `width:${w}px;height:${hh}px` }, board, ...layers);
+}
+
+/**
+ * Lets the items in `list` be dragged into a new order. With a mouse the drag
+ * starts once the pointer moves a little; with touch or a pen, after holding
+ * still for a moment, so a quick swipe still scrolls the list. A line shows
+ * where the item will land. `onMove(from, to)` gets the item's old index and
+ * the gap it was dropped in (0 is before the first item).
+ */
+function makeSortable(list: HTMLElement, itemSel: string, onMove: (from: number, to: number) => void) {
+  const HOLD_MS = 350;
+  let press: { id: number; el: HTMLElement; x: number; y: number; touch: boolean; timer: number } | null = null;
+  let drag: { el: HTMLElement; from: number; y: number; scroll0: number; scroller: HTMLElement; line: HTMLElement; to: number; raf: number; lastY: number } | null = null;
+
+  const items = () => [...list.querySelectorAll<HTMLElement>(itemSel)];
+  const scrollerOf = (el: HTMLElement) => {
+    for (let p = el.parentElement; p; p = p.parentElement) if (/(auto|scroll)/.test(getComputedStyle(p).overflowY)) return p;
+    return document.documentElement;
+  };
+  // While dragging by touch, stop the browser from scrolling the page instead.
+  const noScroll = (e: TouchEvent) => drag && e.preventDefault();
+
+  function begin(y = press?.y ?? 0) {
+    if (!press) return;
+    const el = press.el;
+    const from = items().indexOf(el);
+    if (from < 0) return cancel();
+    const scroller = scrollerOf(list);
+    const line = h('div', { class: 'pt-drop-line' });
+    list.append(line);
+    drag = { el, from, y: press.y, scroll0: scroller.scrollTop, scroller, line, to: from, raf: 0, lastY: press.y };
+    el.classList.add('pt-dragging');
+    list.classList.add('pt-sorting');
+    try {
+      el.setPointerCapture(press.id);
+    } catch {
+      /* the pointer may already be gone */
+    }
+    navigator.vibrate?.(10);
+    track(y);
+    autoScroll();
+  }
+
+  function track(y: number) {
+    if (!drag) return;
+    drag.lastY = y;
+    drag.el.style.transform = `translateY(${y - drag.y + (drag.scroller.scrollTop - drag.scroll0)}px)`;
+    const all = items();
+    let to = all.length;
+    for (const [i, it] of all.entries()) {
+      if (it === drag.el) continue;
+      const r = it.getBoundingClientRect();
+      if (y < r.top + r.height / 2) {
+        to = i;
+        break;
+      }
+    }
+    drag.to = to;
+    const lr = list.getBoundingClientRect();
+    const ref = all[to] && all[to] !== drag.el ? all[to] : null;
+    const gap = parseFloat(getComputedStyle(list).rowGap) || 0;
+    let top: number;
+    if (ref) top = ref.getBoundingClientRect().top - lr.top - gap / 2;
+    else {
+      const last = [...all].reverse().find((it) => it !== drag!.el) ?? drag.el;
+      top = last.getBoundingClientRect().bottom - lr.top + gap / 2;
+    }
+    drag.line.style.top = `${top - 1}px`;
+    // Dropping right where it started changes nothing, so no line there.
+    drag.line.hidden = to === drag.from || to === drag.from + 1;
+  }
+
+  function autoScroll() {
+    if (!drag) return;
+    const r = drag.scroller.getBoundingClientRect();
+    const edge = 36;
+    const y = drag.lastY;
+    const v = y < r.top + edge ? -Math.ceil((r.top + edge - y) / 4) : y > r.bottom - edge ? Math.ceil((y - (r.bottom - edge)) / 4) : 0;
+    if (v) {
+      drag.scroller.scrollTop += v;
+      track(y);
+    }
+    drag.raf = requestAnimationFrame(autoScroll);
+  }
+
+  function cancel() {
+    if (press) clearTimeout(press.timer);
+    press = null;
+    if (!drag) return;
+    cancelAnimationFrame(drag.raf);
+    drag.el.classList.remove('pt-dragging');
+    drag.el.style.transform = '';
+    drag.line.remove();
+    list.classList.remove('pt-sorting');
+    drag = null;
+  }
+
+  list.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || drag) return;
+    const t = e.target as HTMLElement;
+    if (t.closest('button, input, select, textarea, a')) return;
+    const el = t.closest<HTMLElement>(itemSel);
+    if (!el || !list.contains(el)) return;
+    const touch = e.pointerType !== 'mouse';
+    press = { id: e.pointerId, el, x: e.clientX, y: e.clientY, touch, timer: touch ? window.setTimeout(() => begin(), HOLD_MS) : 0 };
+  });
+  list.addEventListener('pointermove', (e) => {
+    if (!press || e.pointerId !== press.id) return;
+    if (drag) {
+      e.preventDefault();
+      track(e.clientY);
+      return;
+    }
+    const moved = Math.hypot(e.clientX - press.x, e.clientY - press.y);
+    if (press.touch) {
+      // Moving before the hold is up means a scroll, not a drag.
+      if (moved > 8) cancel();
+    } else if (moved > 5) begin(e.clientY);
+  });
+  const finish = (e: PointerEvent) => {
+    if (!press || e.pointerId !== press.id) return;
+    if (drag) {
+      track(e.clientY);
+      const { from, to } = drag;
+      // The click that follows letting go must not also open the item.
+      const swallow = (ev: Event) => (ev.stopPropagation(), ev.preventDefault());
+      list.addEventListener('click', swallow, { capture: true, once: true });
+      setTimeout(() => list.removeEventListener('click', swallow, { capture: true }), 0);
+      cancel();
+      if (to !== from && to !== from + 1) onMove(from, to);
+      return;
+    }
+    cancel();
+  };
+  list.addEventListener('pointerup', finish);
+  list.addEventListener('pointercancel', (e) => {
+    if (press && e.pointerId === press.id) cancel();
+  });
+  list.addEventListener('touchmove', noScroll, { passive: false });
+  // A long press on touch would otherwise open the context menu.
+  list.addEventListener('contextmenu', (e) => drag && e.preventDefault());
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && drag) {
+      e.stopPropagation();
+      cancel();
+    }
+  }, true);
+}
+
+/** Move one item from `from` to the gap `to` (as `makeSortable` reports it). */
+function moveItem<T>(arr: T[], from: number, to: number) {
+  const [it] = arr.splice(from, 1);
+  arr.splice(to > from ? to - 1 : to, 0, it);
 }
 
 const SVG = 'http://www.w3.org/2000/svg';
@@ -484,12 +637,21 @@ export const picturesTool: Tool = {
               role: 'button',
               tabindex: 0,
               'aria-current': s === cur ? 'true' : undefined,
-              title: `${s.name} · ${Math.round(s.w)} × ${Math.round(s.h)} px`,
+              title: `${s.name} · ${Math.round(s.w)} × ${Math.round(s.h)} px. Drag to change the order (or Alt+Up/Down).`,
               onclick: () => s !== cur && open(s),
               onkeydown: (e: KeyboardEvent) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
                   if (s !== cur) open(s);
+                } else if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const i = sheets.indexOf(s);
+                  const j = i + (e.key === 'ArrowUp' ? -1 : 1);
+                  if (j < 0 || j >= sheets.length) return;
+                  moveItem(sheets, i, j > i ? j + 1 : j);
+                  paintSheets();
+                  sheetList.querySelectorAll<HTMLElement>('.pt-sheet')[j]?.focus();
                 }
               },
             },
@@ -884,11 +1046,21 @@ export const picturesTool: Tool = {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
                   pickLayer(l, e.shiftKey || e.ctrlKey);
+                } else if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+                  // Up the list is towards the front.
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const shown = [...s.layers].reverse();
+                  const i = shown.indexOf(l);
+                  const j = i + (e.key === 'ArrowUp' ? -1 : 1);
+                  if (j < 0 || j >= shown.length) return;
+                  moveLayer(i, j > i ? j + 1 : j);
+                  layerList.querySelectorAll<HTMLElement>('.pt-layer')[j]?.focus();
                 }
               },
             },
             h('img', { src: l.photo.url, alt: '', class: 'pt-layer-thumb', draggable: false }),
-            h('span', { class: 'pt-layer-name', title: l.photo.name }, l.photo.name),
+            h('span', { class: 'pt-layer-name', title: `${l.photo.name}. Drag to move it in front of or behind the others.` }, l.photo.name),
             eye,
           );
         }),
@@ -1537,14 +1709,17 @@ export const picturesTool: Tool = {
 
     /* ---------- saving ---------- */
     type Format = 'png' | 'jpeg' | 'webp';
-    let lastSave: { format: Format; scale: string; quality: string } = { format: 'png', scale: '1', quality: '92' };
+    type Scale = { x: number; y: number };
+    let lastSave: { format: Format; size: string; quality: string; longSide: number } = { format: 'png', size: 'p:1', quality: '92', longSide: 1920 };
 
-    async function renderFile(s: Sheet, format: Format, scale: number, quality: number): Promise<OutputFile> {
-      const w = s.w * scale;
-      const hh = s.h * scale;
-      if (w > MAX_SIDE || hh > MAX_SIDE || w * hh > MAX_AREA) throw new Error(`“${s.name}” would be ${Math.round(w)} × ${Math.round(hh)} pixels, too big to save. Choose a smaller size.`);
+    const tooBig = (w: number, hh: number) => w > MAX_SIDE || hh > MAX_SIDE || w * hh > MAX_AREA;
+    const outSize = (s: Sheet, k: Scale) => ({ w: Math.max(1, Math.round(s.w * k.x)), h: Math.max(1, Math.round(s.h * k.y)) });
+
+    async function renderFile(s: Sheet, format: Format, k: Scale, quality: number): Promise<OutputFile> {
+      const { w, h: hh } = outSize(s, k);
+      if (tooBig(w, hh)) throw new Error(`“${s.name}” would be ${w} × ${hh} pixels, too big to save. Choose a smaller size.`);
       // JPG has no see-through, so it goes on white.
-      const c = renderSheet(s, scale, format === 'jpeg' ? '#ffffff' : undefined);
+      const c = renderSheet(s, k.x, k.y, format === 'jpeg' ? '#ffffff' : undefined);
       const blob = await canvasToBlob(c, `image/${format}`, quality / 100);
       c.width = c.height = 0;
       const ext = format === 'jpeg' ? 'jpg' : format;
@@ -1561,9 +1736,13 @@ export const picturesTool: Tool = {
     }
     const chosen = (v: string) => (v === 'all' ? [...sheets] : v === 'ticked' ? tickedSheets() : cur ? [cur] : []);
 
+    /** Pictures bigger than this are measured on a smaller copy, so the estimate stays quick. */
+    const SAMPLE_AREA = 4_000_000;
+
     async function savePictures() {
       if (!cur) return;
       const which = whichChoice();
+      let list = chosen(which.value);
       const format = select<Format>(
         [
           ['png', 'PNG (sharpest, keeps see-through)'],
@@ -1571,16 +1750,24 @@ export const picturesTool: Tool = {
           ['webp', 'WebP (smallest)'],
         ],
         lastSave.format,
-        () => paintQ(),
+        () => refresh(),
       );
-      const scale = select<string>(
+      const size = select<string>(
         [
-          ['0.25', '25%'],
-          ['0.5', '50%'],
-          ['1', '100% (actual size)'],
-          ['2', '200%'],
+          ['p:0.25', '25%'],
+          ['p:0.5', '50%'],
+          ['p:0.75', '75%'],
+          ['p:1', '100% (actual size)'],
+          ['p:1.5', '150%'],
+          ['p:2', '200%'],
+          ['l:640', 'Longest side 640 px'],
+          ['l:1280', 'Longest side 1280 px'],
+          ['l:1920', 'Longest side 1920 px (Full HD)'],
+          ['l:3840', 'Longest side 3840 px (4K)'],
+          ['custom', 'Custom size…'],
         ],
-        lastSave.scale,
+        lastSave.size,
+        () => refresh(),
       );
       const quality = select<string>(
         [
@@ -1590,28 +1777,150 @@ export const picturesTool: Tool = {
           ['65', 'Small file'],
         ],
         lastSave.quality,
+        () => refresh(),
       );
       const qField = field('Quality', quality);
-      const paintQ = () => (qField.hidden = format.value === 'png');
-      paintQ();
+
+      // Custom size: width and height for one picture, the longest side for several.
+      const cw = numberInput(Math.round(cur.w), { min: 1, max: MAX_SIDE });
+      const ch = numberInput(Math.round(cur.h), { min: 1, max: MAX_SIDE });
+      const keep = checkbox('Keep proportions', true);
+      const longSide = numberInput(lastSave.longSide, { min: 1, max: MAX_SIDE });
+      const customOne = h('div', { class: 'pt-save-custom' }, h('div', { class: 'grid' }, field('Width (px)', cw), field('Height (px)', ch)), keep.el);
+      const customMany = h('div', { class: 'pt-save-custom' }, field('Longest side (px)', longSide, 'Each picture keeps its shape.'));
+      const resetCustom = () => {
+        cw.value = String(Math.round(list[0].w));
+        ch.value = String(Math.round(list[0].h));
+      };
+      resetCustom();
+      cw.addEventListener('input', () => {
+        if (keep.input.checked && +cw.value > 0) ch.value = String(Math.max(1, Math.round((+cw.value * list[0].h) / list[0].w)));
+        refresh();
+      });
+      ch.addEventListener('input', () => {
+        if (keep.input.checked && +ch.value > 0) cw.value = String(Math.max(1, Math.round((+ch.value * list[0].w) / list[0].h)));
+        refresh();
+      });
+      keep.input.addEventListener('change', () => {
+        if (keep.input.checked) ch.value = String(Math.max(1, Math.round((+cw.value * list[0].h) / list[0].w)));
+        refresh();
+      });
+      longSide.addEventListener('input', () => refresh());
+      which.addEventListener('change', () => {
+        list = chosen(which.value);
+        resetCustom();
+        refresh();
+      });
+
+      const scaleFor = (s: Sheet): Scale => {
+        const v = size.value;
+        if (v.startsWith('p:')) return { x: +v.slice(2), y: +v.slice(2) };
+        if (v.startsWith('l:')) {
+          const k = +v.slice(2) / Math.max(s.w, s.h);
+          return { x: k, y: k };
+        }
+        if (list.length === 1) return { x: Math.max(1, +cw.value || 1) / s.w, y: Math.max(1, +ch.value || 1) / s.h };
+        const k = Math.max(1, +longSide.value || 1) / Math.max(s.w, s.h);
+        return { x: k, y: k };
+      };
+
+      const dims = h('div', { class: 'pt-save-dims' });
+      const est = h('div', { class: 'pt-save-est' });
+      const info = h('div', { class: 'pt-save-info', 'aria-live': 'polite' }, dims, est);
+
+      // Measured by really encoding the picture, so the figure matches the file.
+      // Rendered copies are kept while the dialog is open, so changing only the
+      // format or quality just re-encodes.
+      const samples = new Map<string, HTMLCanvasElement>();
+      const dropSamples = () => {
+        for (const c of samples.values()) c.width = c.height = 0;
+        samples.clear();
+      };
+      let gen = 0;
+      let timer = 0;
+      async function measure(g: number) {
+        const fmt = format.value as Format;
+        let total = 0;
+        let exact = true;
+        for (const s of list) {
+          const k = scaleFor(s);
+          const { w, h: hh } = outSize(s, k);
+          const area = w * hh;
+          const f = area > SAMPLE_AREA ? Math.sqrt(SAMPLE_AREA / area) : 1;
+          if (f < 1) exact = false;
+          const sx = k.x * f;
+          const sy = k.y * f;
+          const key = `${s.id}:${sx.toFixed(5)}:${sy.toFixed(5)}:${fmt === 'jpeg'}`;
+          let c = samples.get(key);
+          if (!c) {
+            if (samples.size > 16) dropSamples();
+            c = renderSheet(s, sx, sy, fmt === 'jpeg' ? '#ffffff' : undefined);
+            samples.set(key, c);
+          }
+          const blob = await canvasToBlob(c, `image/${fmt}`, +quality.value / 100);
+          if (g !== gen) return;
+          total += (blob.size / (c.width * c.height)) * area;
+        }
+        const many = list.length > 1 ? ` for ${list.length} pictures` : '';
+        est.replaceChildren(h('span', { class: 'muted' }, 'File size: '), h('strong', null, `${exact ? '' : 'about '}${formatBytes(Math.round(total))}`), many);
+      }
+
+      function refresh() {
+        const custom = size.value === 'custom';
+        customOne.hidden = !custom || list.length !== 1;
+        customMany.hidden = !custom || list.length === 1;
+        qField.hidden = format.value === 'png';
+        const out = list.map((s) => outSize(s, scaleFor(s)));
+        const big = out.some((o) => tooBig(o.w, o.h));
+        const px = (o: { w: number; h: number }) => `${o.w.toLocaleString()} × ${o.h.toLocaleString()} px`;
+        if (out.length === 1) dims.replaceChildren(h('span', { class: 'muted' }, 'Picture size: '), h('strong', null, px(out[0])));
+        else {
+          const sorted = [...out].sort((a, b) => a.w * a.h - b.w * b.h);
+          const lo = px(sorted[0]);
+          const hi = px(sorted[sorted.length - 1]);
+          dims.replaceChildren(h('span', { class: 'muted' }, 'Picture sizes: '), h('strong', null, lo === hi ? `${hi} each` : `${lo} to ${hi}`));
+        }
+        info.classList.toggle('error', big);
+        gen++;
+        clearTimeout(timer);
+        if (big) {
+          est.textContent = `Too big to save. Keep each side under ${MAX_SIDE.toLocaleString()} px.`;
+          return;
+        }
+        est.replaceChildren(h('span', { class: 'muted' }, 'File size: '), h('span', { class: 'muted' }, 'working it out…'));
+        const g = gen;
+        timer = window.setTimeout(() => {
+          measure(g).catch(() => {
+            if (g === gen) est.textContent = '';
+          });
+        }, 150);
+      }
+      refresh();
+
       const body = h(
         'div',
         { class: 'stack' },
-        h('div', { class: 'grid' }, which.options.length > 1 ? field('Save', which) : null, field('Format', format), field('Size', scale), qField),
+        h('div', { class: 'grid' }, which.options.length > 1 ? field('Save', which) : null, field('Format', format), field('Size', size), qField),
+        customOne,
+        customMany,
+        info,
         h('p', { class: 'muted small' }, canWriteDisk ? 'You choose where it goes. Several pictures go into a folder you pick.' : 'It downloads. Several pictures download together as a .zip.'),
       );
       const res = await modal('Save pictures', body, [
         { label: 'Cancel', value: 'cancel' },
         { label: 'Save', kind: 'primary', value: 'ok' },
       ]);
+      gen++;
+      clearTimeout(timer);
+      dropSamples();
       if (res !== 'ok') return;
-      lastSave = { format: format.value as Format, scale: scale.value, quality: quality.value };
-      const list = chosen(which.value);
+      lastSave = { format: format.value as Format, size: size.value, quality: quality.value, longSide: Math.max(1, +longSide.value || lastSave.longSide) };
+      const scales = list.map(scaleFor);
       const files = await withBusy('Drawing pictures…', async (p) => {
         const out: OutputFile[] = [];
         for (const [i, s] of list.entries()) {
           p(`Drawing ${i + 1} of ${list.length}…`);
-          out.push(await renderFile(s, lastSave.format, +lastSave.scale, +lastSave.quality));
+          out.push(await renderFile(s, lastSave.format, scales[i], +lastSave.quality));
         }
         return out;
       });
@@ -1643,7 +1952,7 @@ export const picturesTool: Tool = {
         for (const [i, s] of list.entries()) {
           p(`Drawing ${i + 1} of ${list.length}…`);
           // Photos on a solid background go in as JPG to keep the PDF small; see-through ones as PNG.
-          const f = await renderFile(s, s.bg === 'none' ? 'png' : 'jpeg', 1, 92);
+          const f = await renderFile(s, s.bg === 'none' ? 'png' : 'jpeg', { x: 1, y: 1 }, 92);
           out.push(new File([f.data as Blob], f.name, { type: f.type }));
         }
         return out;
@@ -1652,6 +1961,23 @@ export const picturesTool: Tool = {
       toast(`${files.length} picture${files.length === 1 ? '' : 's'} sent to Images → PDF. Your canvases stay here.`, 'success');
       ctx.openTool('images-to-pdf', undefined, files);
     }
+
+    /* ---------- reordering by dragging ---------- */
+    // The order of the list is the order pictures are combined and saved in.
+    makeSortable(sheetList, '.pt-sheet', (from, to) => {
+      moveItem(sheets, from, to);
+      paintSheets();
+    });
+    /** Move a picture in the layer list, which shows the front one first (the reverse of drawing order). */
+    function moveLayer(from: number, to: number) {
+      if (!cur) return;
+      const before = snapOf(cur);
+      const shown = [...cur.layers].reverse();
+      moveItem(shown, from, to);
+      cur.layers.splice(0, cur.layers.length, ...shown.reverse());
+      commit(before);
+    }
+    makeSortable(layerList, '.pt-layer', moveLayer);
 
     paintAll();
   },

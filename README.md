@@ -98,9 +98,13 @@ All of this is stored only in this computer's local storage and can be cleared f
 - **Combine.** Tick pictures in the list and press Combine to put them on a new canvas, side by
   side, one above the other, in a grid or on top of each other, optionally at the same height. The
   originals stay, and everything on the new canvas is still editable.
-- **Save.** Save one, the ticked or all canvases as PNG, JPG or WebP at 25-200%, or send them to
-  Images → PDF. Canvases stay while you use other tools, and closing Folio with unsaved ones asks
-  first.
+- **Reorder.** Drag a picture in the list to change the order they are combined and saved in, or a
+  picture in the layer list to bring it in front of or behind the others. On a touch screen, press
+  and hold first, then drag. Alt+Up/Down does the same from the keyboard.
+- **Save.** Save one, the ticked or all canvases as PNG, JPG or WebP, at 25-200%, a longest side
+  (640 px to 4K) or a custom width and height. The dialog shows the picture size in pixels and how
+  big the file will be before you save. Or send them to Images → PDF. Canvases stay while you use
+  other tools, and closing Folio with unsaved ones asks first.
 
 ## Windows app
 
